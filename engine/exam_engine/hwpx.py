@@ -9,26 +9,35 @@ This writer emits the documented HWPX container layout::
     version.xml
     settings.xml
     Contents/content.hpf     (package manifest / spine)
-    Contents/header.xml      (fonts, char/para properties)
+    Contents/header.xml      (fonts, borders, char/para properties, bin-data list)
     Contents/section0.xml    (the body paragraphs)
+    BinData/imageN.<ext>     (embedded figures, if any)
     Preview/PrvText.txt
     META-INF/container.xml
     META-INF/manifest.xml
 
 It targets the published OWPML structure and is best-effort with respect to a
-specific Hancom build; an always-correct ``preview.html`` is written alongside
-the ``.hwpx`` so results are verifiable without Hancom installed.
+specific Hancom build; an always-correct ``preview.html`` (with figures rendered
+inline) is written alongside the ``.hwpx`` so results are verifiable without
+Hancom installed.
+
+Detected figures are embedded as registered ``BinData`` items and marked in the
+body with a placeholder line; inline picture *placement* is intentionally left
+out of the section XML so the document stays in the known-openable family.
 """
 
 from __future__ import annotations
 
+import base64
 import html
+import mimetypes
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from xml.sax.saxutils import escape as xml_escape
 
-from .models import Document, Problem
+from .models import Document, Figure
 
 MIMETYPE = "application/hwp+zip"
 
@@ -39,15 +48,34 @@ NS = {
     "core": "http://www.hancom.co.kr/hwpml/2011/core",
 }
 
+_LANGS = ["HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"]
+
+
+@dataclass
+class _BinItem:
+    """An embedded binary (figure) ready to be written into the ZIP."""
+
+    bin_id: int          # 1-based id used across header / manifests
+    figure_id: str
+    arc_name: str        # e.g. "BinData/image1.png"
+    fmt: str             # e.g. "png"
+    media_type: str      # e.g. "image/png"
+    data: bytes
+
 
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
-def build(document: Document, out_path: Path) -> Path:
-    """Write ``document`` to ``out_path`` (an ``.hwpx`` file)."""
+def build(document: Document, out_path: Path, assets_dir: Optional[Path] = None) -> Path:
+    """Write ``document`` to ``out_path`` (an ``.hwpx`` file).
+
+    ``assets_dir`` is the work directory holding figure files referenced by
+    ``Problem.figures`` (relative paths). When omitted, figures are skipped.
+    """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    bins = _collect_bins(document, assets_dir)
     paragraphs = _document_paragraphs(document)
 
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -55,23 +83,55 @@ def build(document: Document, out_path: Path) -> Path:
         zf.writestr(_stored("mimetype"), MIMETYPE)
         zf.writestr("version.xml", _version_xml())
         zf.writestr("settings.xml", _settings_xml())
-        zf.writestr("Contents/content.hpf", _content_hpf(document))
-        zf.writestr("Contents/header.xml", _header_xml())
+        zf.writestr("Contents/content.hpf", _content_hpf(document, bins))
+        zf.writestr("Contents/header.xml", _header_xml(bins))
         zf.writestr("Contents/section0.xml", _section_xml(paragraphs))
+        for item in bins:
+            zf.writestr(item.arc_name, item.data)
         zf.writestr("Preview/PrvText.txt", _preview_text(document))
         zf.writestr("META-INF/container.xml", _container_xml())
-        zf.writestr("META-INF/manifest.xml", _manifest_xml())
+        zf.writestr("META-INF/manifest.xml", _manifest_xml(bins))
 
     # Always-correct, verifiable rendering next to the HWPX.
-    write_preview_html(document, out_path.with_suffix(".html"))
+    write_preview_html(document, out_path.with_suffix(".html"), assets_dir)
     return out_path
 
 
-def write_preview_html(document: Document, out_path: Path) -> Path:
+def write_preview_html(document: Document, out_path: Path, assets_dir: Optional[Path] = None) -> Path:
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(_preview_html(document), encoding="utf-8")
+    out_path.write_text(_preview_html(document, assets_dir), encoding="utf-8")
     return out_path
+
+
+# --------------------------------------------------------------------------- #
+# Figures / binary data
+# --------------------------------------------------------------------------- #
+def _collect_bins(document: Document, assets_dir: Optional[Path]) -> List[_BinItem]:
+    if assets_dir is None:
+        return []
+    assets_dir = Path(assets_dir)
+    bins: List[_BinItem] = []
+    next_id = 1
+    for problem in document.problems:
+        for figure in problem.figures:
+            src = assets_dir / figure.path
+            if not src.exists():
+                continue
+            fmt = (src.suffix.lstrip(".") or "png").lower()
+            media = mimetypes.guess_type(src.name)[0] or f"image/{fmt}"
+            bins.append(
+                _BinItem(
+                    bin_id=next_id,
+                    figure_id=figure.id,
+                    arc_name=f"BinData/image{next_id}.{fmt}",
+                    fmt=fmt,
+                    media_type=media,
+                    data=src.read_bytes(),
+                )
+            )
+            next_id += 1
+    return bins
 
 
 # --------------------------------------------------------------------------- #
@@ -85,6 +145,8 @@ def _document_paragraphs(document: Document) -> List[str]:
         for i, choice in enumerate(p.choices):
             mark = "①②③④⑤⑥⑦⑧⑨⑩"[i] if i < 10 else f"({i + 1})"
             paras.append(f"   {mark} {choice}")
+        for fig in p.figures:
+            paras.append(f"〔그림 {fig.id} ({fig.width}×{fig.height})〕")
         if p.solution:
             paras.append("[풀이]")
             paras.extend(p.solution.splitlines() or [""])
@@ -126,34 +188,104 @@ def _sec_pr() -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Static-ish container parts
+# header.xml — reference lists (fonts, borders, char/para props, bin data)
 # --------------------------------------------------------------------------- #
-def _header_xml() -> str:
+def _header_xml(bins: List[_BinItem]) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         f'<hh:head xmlns:hh="{NS["head"]}" xmlns:hc="{NS["core"]}" '
         'version="1.31" secCnt="1">'
         '<hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>'
-        '<hh:refList>'
-        '<hh:fontfaces itemCnt="1">'
-        '<hh:fontface lang="HANGUL" fontCnt="1">'
+        + _bin_data_list(bins)
+        + '<hh:refList>'
+        + _fontfaces()
+        + _border_fills()
+        + _char_properties()
+        + _tab_properties()
+        + '<hh:numberings itemCnt="0"/>'
+        + '<hh:bullets itemCnt="0"/>'
+        + _para_properties()
+        + _styles()
+        + '</hh:refList>'
+        '</hh:head>'
+    )
+
+
+def _bin_data_list(bins: List[_BinItem]) -> str:
+    if not bins:
+        return ""
+    items = "".join(
+        f'<hh:binData id="{b.bin_id}" type="EMBEDDING" format="{b.fmt}" compress="0"/>'
+        for b in bins
+    )
+    return f'<hh:binDataList itemCnt="{len(bins)}">{items}</hh:binDataList>'
+
+
+def _fontfaces() -> str:
+    # Declare the same font for every language slot so charPr fontRefs resolve.
+    one = (
         '<hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0">'
         '<hh:typeInfo familyType="FCAT_MYUNGJO" weight="50" proportion="0" '
         'contrast="0" strokeVariation="0" armStyle="0" letterform="0" '
         'midline="0" xHeight="0"/>'
         '</hh:font>'
-        '</hh:fontface>'
-        '</hh:fontfaces>'
+    )
+    faces = "".join(
+        f'<hh:fontface lang="{lang}" fontCnt="1">{one}</hh:fontface>' for lang in _LANGS
+    )
+    return f'<hh:fontfaces itemCnt="{len(_LANGS)}">{faces}</hh:fontfaces>'
+
+
+def _border_fills() -> str:
+    def border(direction: str, type_: str = "NONE") -> str:
+        return f'<hh:{direction} type="{type_}" width="0.1mm" color="#000000"/>'
+
+    def fill(bid: int) -> str:
+        return (
+            f'<hh:borderFill id="{bid}" threeD="0" shadow="0" centerLine="NONE" '
+            'breakCellSeparateLine="0">'
+            '<hh:slash type="NONE" Crooked="0" isCounter="0"/>'
+            '<hh:backSlash type="NONE" Crooked="0" isCounter="0"/>'
+            + border("leftBorder") + border("rightBorder")
+            + border("topBorder") + border("bottomBorder")
+            + '<hh:diagonal type="SOLID" width="0.1mm" color="#000000"/>'
+            '</hh:borderFill>'
+        )
+
+    return f'<hh:borderFills itemCnt="2">{fill(1)}{fill(2)}</hh:borderFills>'
+
+
+def _char_properties() -> str:
+    return (
         '<hh:charProperties itemCnt="1">'
         '<hh:charPr id="0" height="1000" textColor="#000000" shadeColor="none" '
-        'useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="2">'
-        '<hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>'
-        '<hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>'
-        '<hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>'
-        '<hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>'
-        '<hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>'
-        '</hh:charPr>'
+        'useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1">'
+        + _per_lang("fontRef", "0") + _per_lang("ratio", "100")
+        + _per_lang("spacing", "0") + _per_lang("relSz", "100")
+        + _per_lang("offset", "0")
+        + '</hh:charPr>'
         '</hh:charProperties>'
+    )
+
+
+def _per_lang(tag: str, value: str) -> str:
+    attrs = " ".join(
+        f'{name}="{value}"'
+        for name in ["hangul", "latin", "hanja", "japanese", "other", "symbol", "user"]
+    )
+    return f'<hh:{tag} {attrs}/>'
+
+
+def _tab_properties() -> str:
+    return (
+        '<hh:tabProperties itemCnt="1">'
+        '<hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/>'
+        '</hh:tabProperties>'
+    )
+
+
+def _para_properties() -> str:
+    return (
         '<hh:paraProperties itemCnt="1">'
         '<hh:paraPr id="0" tabPrIDRef="0" condense="0" fontLineHeight="0" '
         'snapToGrid="1" suppressLineNumbers="0" checked="0">'
@@ -167,17 +299,28 @@ def _header_xml() -> str:
         '<hh:lineSpacing type="PERCENT" value="160" unit="HWPUNIT"/>'
         '</hh:paraPr>'
         '</hh:paraProperties>'
+    )
+
+
+def _styles() -> str:
+    return (
         '<hh:styles itemCnt="1">'
         '<hh:style id="0" type="PARA" name="바탕글" engName="Normal" '
         'paraPrIDRef="0" charPrIDRef="0" nextStyleIDRef="0" langID="1042" lockForm="0"/>'
         '</hh:styles>'
-        '</hh:refList>'
-        '</hh:head>'
     )
 
 
-def _content_hpf(document: Document) -> str:
+# --------------------------------------------------------------------------- #
+# Package descriptor & container parts
+# --------------------------------------------------------------------------- #
+def _content_hpf(document: Document, bins: List[_BinItem]) -> str:
     title = xml_escape(document.title)
+    bin_items = "".join(
+        f'<opf:item id="{b.figure_id}" href="{b.arc_name}" '
+        f'media-type="{b.media_type}" isEmbeded="1"/>'
+        for b in bins
+    )
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<hpf:package xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf" '
@@ -195,7 +338,8 @@ def _content_hpf(document: Document) -> str:
         '<opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>'
         '<opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>'
         '<opf:item id="settings" href="settings.xml" media-type="application/xml"/>'
-        '</opf:manifest>'
+        + bin_items
+        + '</opf:manifest>'
         '<opf:spine>'
         '<opf:itemref idref="header" linear="yes"/>'
         '<opf:itemref idref="section0" linear="yes"/>'
@@ -236,7 +380,7 @@ def _container_xml() -> str:
     )
 
 
-def _manifest_xml() -> str:
+def _manifest_xml(bins: List[_BinItem]) -> str:
     entries = [
         ("Contents/content.hpf", "application/hwpml-package+xml"),
         ("Contents/header.xml", "application/xml"),
@@ -244,7 +388,7 @@ def _manifest_xml() -> str:
         ("settings.xml", "application/xml"),
         ("version.xml", "application/xml"),
         ("Preview/PrvText.txt", "text/plain"),
-    ]
+    ] + [(b.arc_name, b.media_type) for b in bins]
     items = "".join(
         f'<odf:file-entry odf:full-path="{path}" odf:media-type="{mt}"/>'
         for path, mt in entries
@@ -265,6 +409,8 @@ def _preview_text(document: Document) -> str:
         lines.append(f"{p.number}. {p.text}")
         for i, choice in enumerate(p.choices):
             lines.append(f"  ({i + 1}) {choice}")
+        for fig in p.figures:
+            lines.append(f"  [그림 {fig.id}]")
         if p.solution:
             lines.append("[풀이]")
             lines.append(p.solution)
@@ -272,20 +418,33 @@ def _preview_text(document: Document) -> str:
     return "\n".join(lines)
 
 
-def _preview_html(document: Document) -> str:
+def _preview_html(document: Document, assets_dir: Optional[Path]) -> str:
     def esc(s: str) -> str:
         return html.escape(s).replace("\n", "<br/>")
 
+    def img_tag(figure: Figure) -> str:
+        if assets_dir is None:
+            return ""
+        src = Path(assets_dir) / figure.path
+        if not src.exists():
+            return ""
+        media = mimetypes.guess_type(src.name)[0] or "image/png"
+        b64 = base64.b64encode(src.read_bytes()).decode("ascii")
+        return f"<img class='figure' alt='{html.escape(figure.id)}' src='data:{media};base64,{b64}'/>"
+
     rows = []
     for p in document.problems:
-        choices = "".join(
-            f'<li>{esc(c)}</li>' for c in p.choices
-        )
+        choices = "".join(f"<li>{esc(c)}</li>" for c in p.choices)
         choices_html = f"<ol class='choices'>{choices}</ol>" if choices else ""
-        solution = f"<div class='solution'><b>풀이</b><p>{esc(p.solution)}</p></div>" if p.solution else ""
+        figures_html = "".join(img_tag(f) for f in p.figures)
+        solution = (
+            f"<div class='solution'><b>풀이</b><p>{esc(p.solution)}</p></div>"
+            if p.solution
+            else ""
+        )
         rows.append(
             f"<section class='problem'><h3>{p.number}.</h3>"
-            f"<p class='stem'>{esc(p.text)}</p>{choices_html}{solution}</section>"
+            f"<p class='stem'>{esc(p.text)}</p>{choices_html}{figures_html}{solution}</section>"
         )
     return (
         "<!doctype html><html lang='ko'><head><meta charset='utf-8'>"
@@ -294,6 +453,7 @@ def _preview_html(document: Document) -> str:
         "padding:0 1rem;line-height:1.6;color:#1a1a1a}h1{border-bottom:2px solid #333;padding-bottom:.4rem}"
         ".problem{margin:1.4rem 0;padding:1rem;border:1px solid #e2e2e2;border-radius:8px}"
         ".problem h3{margin:.2rem 0;color:#0b5}.choices{margin:.4rem 0}"
+        ".figure{max-width:100%;margin:.6rem 0;border:1px solid #ddd;border-radius:6px}"
         ".solution{margin-top:.8rem;padding:.6rem .8rem;background:#f6f8fa;border-radius:6px}"
         ".solution p{margin:.3rem 0;white-space:pre-wrap}</style></head>"
         f"<body><h1>{html.escape(document.title)}</h1>"

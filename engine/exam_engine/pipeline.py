@@ -44,7 +44,8 @@ def save_document(document: Document, work_dir: Path) -> Path:
 def run_extract(pdf_path: Path, work_dir: Path, settings: Settings, log: Logger = _noop) -> Document:
     log(f"PDF에서 텍스트를 추출하는 중: {Path(pdf_path).name}")
     document = extract_stage.extract(pdf_path, work_dir, dpi=settings.dpi)
-    log(f"문제 {len(document.problems)}개를 인식했습니다.")
+    n_figs = sum(len(p.figures) for p in document.problems)
+    log(f"문제 {len(document.problems)}개, 도형 {n_figs}개를 인식했습니다.")
     save_document(document, work_dir)
     return document
 
@@ -71,7 +72,10 @@ def run_figures(work_dir: Path, settings: Settings, log: Logger = _noop) -> Docu
 def run_build(work_dir: Path, out_path: Path, settings: Settings, log: Logger = _noop) -> Path:
     log("HWPX 문서를 조립하는 중...")
     document = load_document(work_dir)
-    result = hwpx.build(document, out_path)
+    n_figs = sum(len(p.figures) for p in document.problems)
+    if n_figs:
+        log(f"도형 {n_figs}개를 문서에 포함합니다.")
+    result = hwpx.build(document, out_path, assets_dir=Path(work_dir))
     log(f"완료: {result}")
     return result
 

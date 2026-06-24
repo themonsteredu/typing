@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from .models import Document, Problem
+from .models import Document, Figure, Problem
 
 # "1.", "12.", "3)", "10 )" at the start of a line.
 _PROBLEM_RE = re.compile(r"^\s*(\d{1,3})\s*[.)]\s+(.*)$")
@@ -101,7 +101,98 @@ def _split_choices(body: str) -> tuple[str, List[str]]:
     return stem, choices
 
 
-def extract(pdf_path: Path, work_dir: Path, dpi: int = 200, render: bool = True) -> Document:
+def problem_positions(pdf_path: Path) -> Dict[int, List[Tuple[int, float]]]:
+    """Map each page to ``(problem_number, y_top)`` for every problem header.
+
+    Used to decide which problem a detected figure belongs to.
+    """
+    fitz = _require_fitz()
+    positions: Dict[int, List[Tuple[int, float]]] = {}
+    with fitz.open(pdf_path) as doc:
+        for page_no, page in enumerate(doc, start=1):
+            data = page.get_text("dict")
+            for block in data.get("blocks", []):
+                for line in block.get("lines", []):
+                    text = "".join(span.get("text", "") for span in line.get("spans", []))
+                    match = _PROBLEM_RE.match(text)
+                    if match:
+                        y_top = float(line.get("bbox", [0, 0, 0, 0])[1])
+                        positions.setdefault(page_no, []).append((int(match.group(1)), y_top))
+    return positions
+
+
+def detect_figures(pdf_path: Path, work_dir: Path) -> Dict[int, List[Tuple[float, Figure]]]:
+    """Extract embedded raster images per page as ``(y_top, Figure)`` pairs."""
+    fitz = _require_fitz()
+    fig_dir = Path(work_dir) / "figures"
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    by_page: Dict[int, List[Tuple[float, Figure]]] = {}
+
+    with fitz.open(pdf_path) as doc:
+        for page_no, page in enumerate(doc, start=1):
+            for idx, info in enumerate(page.get_images(full=True)):
+                xref = info[0]
+                try:
+                    base = doc.extract_image(xref)
+                except Exception:
+                    continue
+                ext = base.get("ext", "png")
+                fid = f"p{page_no}_img{idx}"
+                fname = f"{fid}.{ext}"
+                (fig_dir / fname).write_bytes(base["image"])
+
+                try:
+                    rects = page.get_image_rects(xref)
+                    y_top = float(rects[0].y0) if rects else 0.0
+                except Exception:
+                    y_top = 0.0
+
+                figure = Figure(
+                    id=fid,
+                    path=f"figures/{fname}",
+                    page=page_no,
+                    width=int(base.get("width", 0)),
+                    height=int(base.get("height", 0)),
+                )
+                by_page.setdefault(page_no, []).append((y_top, figure))
+    return by_page
+
+
+def assign_figures(problems: List[Problem], pdf_path: Path, work_dir: Path) -> int:
+    """Attach detected figures to the problem they appear under. Returns the count."""
+    positions = problem_positions(pdf_path)
+    figures_by_page = detect_figures(pdf_path, work_dir)
+    by_number = {p.number: p for p in problems}
+    assigned = 0
+
+    for page_no, figures in figures_by_page.items():
+        headers = sorted(positions.get(page_no, []), key=lambda h: h[1])
+        for y_top, figure in figures:
+            # The owning problem is the last header whose top is above the figure.
+            owner_number: Optional[int] = None
+            for number, header_y in headers:
+                if header_y <= y_top:
+                    owner_number = number
+                else:
+                    break
+            if owner_number is None and headers:
+                owner_number = headers[0][0]
+            target = by_number.get(owner_number) if owner_number is not None else None
+            if target is None and problems:
+                target = problems[-1]  # fall back to the last problem on the page
+            if target is not None:
+                target.figures.append(figure)
+                assigned += 1
+    return assigned
+
+
+def extract(
+    pdf_path: Path,
+    work_dir: Path,
+    dpi: int = 200,
+    render: bool = True,
+    detect: bool = True,
+) -> Document:
     """Run the full extraction stage and return a :class:`Document`."""
     pdf_path = Path(pdf_path)
     work_dir = Path(work_dir)
@@ -116,8 +207,21 @@ def extract(pdf_path: Path, work_dir: Path, dpi: int = 200, render: bool = True)
             pass
 
     problems = split_problems(pages)
+    if detect:
+        try:
+            assign_figures(problems, pdf_path, work_dir)
+        except Exception:
+            pass  # figure detection is best-effort
     title = pdf_path.stem or "Exam"
     return Document(title=title, source=str(pdf_path), problems=problems)
 
 
-__all__ = ["extract", "extract_text_pages", "render_pages", "split_problems"]
+__all__ = [
+    "extract",
+    "extract_text_pages",
+    "render_pages",
+    "split_problems",
+    "detect_figures",
+    "problem_positions",
+    "assign_figures",
+]

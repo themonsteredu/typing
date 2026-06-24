@@ -16,16 +16,21 @@ from .models import Document
 
 def process(document: Document, work_dir: Path, max_width: int = 1600) -> Document:
     work_dir = Path(work_dir)
-    pages_dir = work_dir / "pages"
-    if not pages_dir.exists():
-        return document
-
     try:
         from PIL import Image
     except ImportError:
         return document  # Pillow optional; skip optimization gracefully
 
-    for img_path in sorted(pages_dir.glob("*.png")):
+    # Optimize both rendered page previews and the cropped figures.
+    targets = []
+    for sub in ("pages", "figures"):
+        d = work_dir / sub
+        if d.exists():
+            targets.extend(sorted(d.glob("*.png")))
+            targets.extend(sorted(d.glob("*.jpg")))
+            targets.extend(sorted(d.glob("*.jpeg")))
+
+    for img_path in targets:
         try:
             with Image.open(img_path) as im:
                 if im.width > max_width:
