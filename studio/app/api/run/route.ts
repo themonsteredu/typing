@@ -1,0 +1,46 @@
+import { NextRequest } from "next/server";
+import path from "node:path";
+import { runEngine, workDir, EngineEvent } from "@/lib/engine";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// SSE endpoint: runs the full pipeline for a job and streams log events.
+export async function GET(req: NextRequest) {
+  const jobId = req.nextUrl.searchParams.get("job");
+  if (!jobId || !/^[a-f0-9-]{36}$/.test(jobId)) {
+    return new Response("invalid job id", { status: 400 });
+  }
+
+  const dir = workDir(jobId);
+  const input = path.join(dir, "input.pdf");
+  const output = path.join(dir, "output.hwpx");
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: EngineEvent) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      };
+      try {
+        const result = await runEngine(
+          ["run", input, "--out", output, "--work", path.join(dir, "work")],
+          send
+        );
+        send({ type: "done", ...result } as EngineEvent);
+      } catch (err) {
+        send({ type: "error", message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+}

@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Next.js
+studio/.next/
+studio/out/
+studio/build/
+.vercel
+
+# Local config & secrets (API keys live here)
+.exam-studio/
+config/settings.local.json
+.env
+.env.local
+
+# Work / output
+work/
+output/
+*.hwpx
+!engine/tests/fixtures/*.hwpx
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
