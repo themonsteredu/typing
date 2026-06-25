@@ -183,10 +183,127 @@ def _is_real_figure(rect, page_w: float, page_h: float) -> bool:
     return True
 
 
+def _cluster_rects(rects, gap: float = 16.0):
+    """Merge rects whose padded bounding boxes touch, into figure-region clusters."""
+    boxes = [[float(r.x0), float(r.y0), float(r.x1), float(r.y1)] for r in rects]
+
+    def touch(a, b) -> bool:
+        return not (a[2] + gap < b[0] or b[2] + gap < a[0] or
+                    a[3] + gap < b[1] or b[3] + gap < a[1])
+
+    merged = True
+    while merged:
+        merged = False
+        out: List[list] = []
+        used = [False] * len(boxes)
+        for i in range(len(boxes)):
+            if used[i]:
+                continue
+            a = boxes[i][:]
+            for j in range(i + 1, len(boxes)):
+                if used[j]:
+                    continue
+                if touch(a, boxes[j]):
+                    b = boxes[j]
+                    a = [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])]
+                    used[j] = True
+                    merged = True
+            used[i] = True
+            out.append(a)
+        boxes = out
+    return boxes
+
+
+def _is_vector_figure(box, page_w: float, page_h: float, member_count: int) -> bool:
+    """Decide if a cluster of vector strokes is a real figure (not a box/table/rule)."""
+    w, h = box[2] - box[0], box[3] - box[1]
+    if w < 35 or h < 35:
+        return False  # too small (answer box, single mark)
+    rel_w, rel_h = w / page_w, h / page_h
+    top_frac = box[1] / page_h
+    aspect = w / max(h, 1.0)
+    if rel_w >= 0.85 and top_frac < 0.18:
+        return False  # header table band
+    if rel_w >= 0.9 and rel_h >= 0.8:
+        return False  # full-page frame
+    if aspect >= 5.0 or aspect <= 0.2:
+        return False  # rule / thin strip
+    if member_count < 3:
+        return False  # a lone rectangle (choice box) — not a diagram
+    return True
+
+
+def detect_vector_figures(pdf_path: Path, work_dir: Path, dpi: int = 200, max_per_page: int = 8):
+    """Find vector-drawn diagrams/graphs and crop them from the rendered page.
+
+    Exam figures are usually vector strokes (not embedded images), so
+    ``get_images`` misses them. We cluster the page's drawing paths into regions,
+    keep diagram-shaped clusters, and render each region to a PNG crop.
+    """
+    fitz = _require_fitz()
+    fig_dir = Path(work_dir) / "figures"
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    by_page: Dict[int, List[Tuple[float, Figure]]] = {}
+    zoom = dpi / 72.0
+    matrix = fitz.Matrix(zoom, zoom)
+
+    with fitz.open(pdf_path) as doc:
+        for page_no, page in enumerate(doc, start=1):
+            pw = float(page.rect.width) or 1.0
+            ph = float(page.rect.height) or 1.0
+            try:
+                rects = [d["rect"] for d in page.get_drawings() if d.get("rect")]
+            except Exception:
+                continue
+            # Keep thin line strokes (a line has ~0 width or height) — we filter
+            # by the *cluster* size later, not the individual stroke.
+            rects = [r for r in rects if float(r.width) > 1 or float(r.height) > 1]
+            if not rects:
+                continue
+            clusters = _cluster_rects(rects)
+            kept = 0
+            for idx, box in enumerate(clusters):
+                members = sum(
+                    1 for r in rects
+                    if r.x0 >= box[0] - 1 and r.y0 >= box[1] - 1
+                    and r.x1 <= box[2] + 1 and r.y1 <= box[3] + 1
+                )
+                if not _is_vector_figure(box, pw, ph, members):
+                    continue
+                if kept >= max_per_page:
+                    break
+                clip = fitz.Rect(box[0], box[1], box[2], box[3])
+                try:
+                    cpix = page.get_pixmap(matrix=matrix, clip=clip)
+                except Exception:
+                    continue
+                fid = f"p{page_no}_vec{idx}"
+                fname = f"{fid}.png"
+                cpix.save(str(fig_dir / fname))
+                figure = Figure(id=fid, path=f"figures/{fname}", page=page_no,
+                                width=cpix.width, height=cpix.height)
+                by_page.setdefault(page_no, []).append((float(box[1]), figure))
+                kept += 1
+    return by_page
+
+
+def _merge_page_figs(*sources):
+    out: Dict[int, List[Tuple[float, Figure]]] = {}
+    for src in sources:
+        for page_no, figs in src.items():
+            out.setdefault(page_no, []).extend(figs)
+    return out
+
+
 def assign_figures(problems: List[Problem], pdf_path: Path, work_dir: Path) -> int:
-    """Attach detected figures to the problem they appear under. Returns the count."""
+    """Attach detected figures (raster + vector) to the problem they appear under."""
     positions = problem_positions(pdf_path)
-    figures_by_page = detect_figures(pdf_path, work_dir)
+    raster = detect_figures(pdf_path, work_dir)
+    try:
+        vector = detect_vector_figures(pdf_path, work_dir)
+    except Exception:
+        vector = {}
+    figures_by_page = _merge_page_figs(raster, vector)
     by_number = {p.number: p for p in problems}
     assigned = 0
 
@@ -289,6 +406,7 @@ __all__ = [
     "render_pages",
     "split_problems",
     "detect_figures",
+    "detect_vector_figures",
     "problem_positions",
     "assign_figures",
 ]

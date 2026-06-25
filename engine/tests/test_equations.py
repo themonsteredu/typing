@@ -57,3 +57,28 @@ def test_figure_filter_keeps_diagram():
 def test_figure_filter_drops_tiny_and_thin():
     assert _is_real_figure(_Rect(80, 300, 95, 315), 595, 842) is False  # tiny
     assert _is_real_figure(_Rect(40, 400, 560, 430), 595, 842) is False  # thin rule
+
+
+# --- vector figure detection (graphs/diagrams drawn as strokes) ---
+def test_vector_figure_detection(tmp_path):
+    fitz = pytest.importorskip("fitz")
+    from exam_engine.extract import detect_vector_figures
+
+    pdf = tmp_path / "v.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    # a triangle of vector strokes mid-page = one figure
+    page.draw_line((120, 150), (260, 150))
+    page.draw_line((260, 150), (190, 260))
+    page.draw_line((190, 260), (120, 150))
+    page.draw_line((190, 150), (190, 260))
+    # a wide thin table border that must be filtered out
+    page.draw_rect(fitz.Rect(40, 500, 560, 535))
+    doc.save(str(pdf))
+    doc.close()
+
+    figs = detect_vector_figures(pdf, tmp_path / "work")
+    all_figs = [f for page_figs in figs.values() for _, f in page_figs]
+    assert len(all_figs) >= 1  # the triangle is captured
+    # the captured crop file exists
+    assert (tmp_path / "work" / "figures" / f"{all_figs[0].id}.png").exists()
