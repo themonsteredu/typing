@@ -18,6 +18,7 @@ export interface StudioSettings {
   useVision: boolean;
   columns: number;
   generateSolutions: boolean;
+  examHeader: boolean;
 }
 
 export const DEFAULT_SETTINGS: StudioSettings = {
@@ -32,6 +33,7 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   useVision: true,
   columns: 1,
   generateSolutions: true,
+  examHeader: true,
 };
 
 export async function loadSettings(): Promise<StudioSettings> {

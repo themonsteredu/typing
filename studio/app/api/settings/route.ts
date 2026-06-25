@@ -13,6 +13,7 @@ export async function GET() {
     useVision: s.useVision,
     columns: s.columns,
     generateSolutions: s.generateSolutions,
+    examHeader: s.examHeader,
     hasKey: Boolean(s.anthropicApiKey),
     keyHint: maskKey(s.anthropicApiKey),
   });
@@ -29,6 +30,7 @@ export async function POST(req: NextRequest) {
   if (typeof body.useVision === "boolean") patch.useVision = body.useVision;
   if (typeof body.columns === "number") patch.columns = body.columns;
   if (typeof body.generateSolutions === "boolean") patch.generateSolutions = body.generateSolutions;
+  if (typeof body.examHeader === "boolean") patch.examHeader = body.examHeader;
   // Empty string with the explicit clear flag removes the stored key.
   if ((body as { clearKey?: boolean }).clearKey === true) {
     patch.anthropicApiKey = "";

@@ -85,7 +85,8 @@ def run_build(work_dir: Path, out_path: Path, settings: Settings, log: Logger = 
         log(f"도형 {n_figs}개를 문서에 포함합니다.")
     if settings.columns and settings.columns > 1:
         log(f"{settings.columns}단 레이아웃으로 배치합니다.")
-    result = hwpx.build(document, out_path, assets_dir=Path(work_dir), columns=settings.columns)
+    result = hwpx.build(document, out_path, assets_dir=Path(work_dir),
+                        columns=settings.columns, header=settings.exam_header)
     log(f"완료: {result}")
     return result
 

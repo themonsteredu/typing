@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const [useVision, setUseVision] = useState(true);
   const [columns, setColumns] = useState(1);
   const [generateSolutions, setGenerateSolutions] = useState(true);
+  const [examHeader, setExamHeader] = useState(true);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -35,6 +36,7 @@ export default function SettingsPage() {
         setUseVision(s.useVision !== false);
         setColumns(s.columns ?? 1);
         setGenerateSolutions(s.generateSolutions !== false);
+        setExamHeader(s.examHeader !== false);
         setHasKey(Boolean(s.hasKey));
         setKeyHint(s.keyHint ?? "");
         setLoaded(true);
@@ -44,7 +46,7 @@ export default function SettingsPage() {
 
   async function save(extra: Record<string, unknown> = {}) {
     const body: Record<string, unknown> = {
-      provider, models, dpi, useVision, columns, generateSolutions, ...extra,
+      provider, models, dpi, useVision, columns, generateSolutions, examHeader, ...extra,
     };
     if (!extra.clearKey && apiKey.trim()) body.anthropicApiKey = apiKey.trim();
     const res = await fetch("/api/settings", {
@@ -156,6 +158,17 @@ export default function SettingsPage() {
 
       <div className="panel">
         <h3 style={{ marginTop: 0 }}>문서 레이아웃</h3>
+        <div className="field">
+          <label>
+            <input
+              type="checkbox"
+              checked={examHeader}
+              onChange={(e) => setExamHeader(e.target.checked)}
+              style={{ width: "auto", marginRight: "0.5rem" }}
+            />
+            시험지 머리말 (제목 + 이름·학년·날짜 기입란)
+          </label>
+        </div>
         <div className="field">
           <label>단 나누기</label>
           <select value={columns} onChange={(e) => setColumns(Number(e.target.value))}>

@@ -35,6 +35,24 @@ def test_two_column_sets_colcount(tmp_path: Path):
     assert "column-count:2" in out.with_suffix(".html").read_text(encoding="utf-8")
 
 
+def test_exam_header_adds_table(tmp_path: Path):
+    pytest.importorskip("pyhwpxlib")
+    out = tmp_path / "h.hwpx"
+    build(_doc(), out, header=True)
+    sec = zipfile.ZipFile(out).read("Contents/section0.xml").decode()
+    assert "hp:tbl" in sec and "이름" in sec and "날짜" in sec
+    html = out.with_suffix(".html").read_text(encoding="utf-8")
+    assert "infohdr" in html
+
+
+def test_no_header_when_disabled(tmp_path: Path):
+    pytest.importorskip("pyhwpxlib")
+    out = tmp_path / "nh.hwpx"
+    build(_doc(), out, header=False)
+    sec = zipfile.ZipFile(out).read("Contents/section0.xml").decode()
+    assert "hp:tbl" not in sec
+
+
 def test_solutions_included_vs_skipped(tmp_path):
     # build always includes whatever solution the problem carries; the *skip*
     # happens in the pipeline (run_generate is not called). Simulate both.

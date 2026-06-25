@@ -43,6 +43,8 @@ DEFAULTS: Dict[str, Any] = {
     "columns": 1,
     # Generate AI worked solutions. Off = problems only, no 풀이.
     "generateSolutions": True,
+    # Add an exam-style header (centered title + 이름/학년/날짜 fill-in row).
+    "examHeader": True,
 }
 
 
@@ -55,6 +57,7 @@ class Settings:
     use_vision: bool = True
     columns: int = 1
     generate_solutions: bool = True
+    exam_header: bool = True
 
     # ----- (de)serialization in the JSON shape the web app uses -----
     @classmethod
@@ -68,6 +71,7 @@ class Settings:
             use_vision=bool(merged.get("useVision", True)),
             columns=int(merged.get("columns", 1) or 1),
             generate_solutions=bool(merged.get("generateSolutions", True)),
+            exam_header=bool(merged.get("examHeader", True)),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -79,6 +83,7 @@ class Settings:
             "useVision": self.use_vision,
             "columns": self.columns,
             "generateSolutions": self.generate_solutions,
+            "examHeader": self.exam_header,
         }
 
     def api_key(self) -> str:

@@ -67,20 +67,21 @@ class _BinItem:
 # Public API
 # --------------------------------------------------------------------------- #
 def build(document: Document, out_path: Path, assets_dir: Optional[Path] = None,
-          columns: int = 1) -> Path:
+          columns: int = 1, header: bool = True) -> Path:
     """Write ``document`` to ``out_path`` (an ``.hwpx`` file).
 
     Prefers the validated ``pyhwpxlib`` backend (produces Hancom-openable files);
     falls back to the built-in writer if the library is unavailable. ``assets_dir``
     is the work directory holding figure files referenced by ``Problem.figures``.
-    ``columns`` (1 or 2) lays the body out in newspaper columns like a real exam.
-    An always-correct ``preview.html`` is written alongside either way.
+    ``columns`` (1 or 2) lays the body out in newspaper columns like a real exam;
+    ``header`` adds a centered title + 이름/학년/날짜 fill-in table. An
+    always-correct ``preview.html`` is written alongside either way.
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        _build_with_pyhwpxlib(document, out_path, assets_dir)
+        _build_with_pyhwpxlib(document, out_path, assets_dir, header=header)
         if columns and columns > 1:
             _apply_columns(out_path, columns)
     except Exception:
@@ -88,7 +89,7 @@ def build(document: Document, out_path: Path, assets_dir: Optional[Path] = None,
         # file is always produced (and the HTML preview always renders).
         _build_legacy(document, out_path, assets_dir)
 
-    write_preview_html(document, out_path.with_suffix(".html"), assets_dir, columns)
+    write_preview_html(document, out_path.with_suffix(".html"), assets_dir, columns, header)
     return out_path
 
 
@@ -129,12 +130,29 @@ def _apply_columns(out_path: Path, col_count: int, gap: int = 2268) -> None:
             zout.writestr(zi, contents[info.filename])
 
 
-def _build_with_pyhwpxlib(document: Document, out_path: Path, assets_dir: Optional[Path]) -> Path:
+def _build_with_pyhwpxlib(document: Document, out_path: Path, assets_dir: Optional[Path],
+                          header: bool = True) -> Path:
     """Build the HWPX with pyhwpxlib (raises ImportError if not installed)."""
     from pyhwpxlib import HwpxBuilder
 
     builder = HwpxBuilder()
-    builder.add_heading(document.title or "Exam", level=1)
+
+    # --- exam-style header: centered title + a 이름/학년반/날짜 fill-in table ---
+    if header:
+        try:
+            builder.add_heading(document.title or "시험지", level=1, alignment="CENTER")
+            builder.add_table(
+                [["이름", "", "학년 / 반", "", "날짜", ""]],
+                cell_colors={(0, 0): "#EEEEEE", (0, 2): "#EEEEEE", (0, 4): "#EEEEEE"},
+                col_widths=[5200, 9000, 6500, 8000, 5200, 8620],
+                use_preset=False,
+            )
+            builder.add_draw_line()  # divider under the header
+            builder.add_paragraph("")
+        except Exception:
+            builder.add_heading(document.title or "시험지", level=1, alignment="CENTER")
+    else:
+        builder.add_heading(document.title or "Exam", level=1)
 
     for problem in document.problems:
         builder.add_paragraph(f"{problem.number}. {problem.text}".strip())
@@ -186,10 +204,10 @@ def _build_legacy(document: Document, out_path: Path, assets_dir: Optional[Path]
 
 
 def write_preview_html(document: Document, out_path: Path, assets_dir: Optional[Path] = None,
-                       columns: int = 1) -> Path:
+                       columns: int = 1, header: bool = True) -> Path:
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(_preview_html(document, assets_dir, columns), encoding="utf-8")
+    out_path.write_text(_preview_html(document, assets_dir, columns, header), encoding="utf-8")
     return out_path
 
 
@@ -507,7 +525,8 @@ def _preview_text(document: Document) -> str:
     return "\n".join(lines)
 
 
-def _preview_html(document: Document, assets_dir: Optional[Path], columns: int = 1) -> str:
+def _preview_html(document: Document, assets_dir: Optional[Path], columns: int = 1,
+                  header: bool = True) -> str:
     def esc(s: str) -> str:
         return html.escape(s).replace("\n", "<br/>")
 
@@ -538,11 +557,28 @@ def _preview_html(document: Document, assets_dir: Optional[Path], columns: int =
     col_css = (
         f"column-count:{int(columns)};column-gap:2rem;" if columns and columns > 1 else ""
     )
+    title = html.escape(document.title)
+    if header:
+        head_html = (
+            f"<h1 class='examtitle'>{title}</h1>"
+            "<table class='infohdr'><tr>"
+            "<td class='lbl'>이름</td><td></td>"
+            "<td class='lbl'>학년 / 반</td><td></td>"
+            "<td class='lbl'>날짜</td><td></td>"
+            "</tr></table>"
+        )
+    else:
+        head_html = f"<h1>{title}</h1>"
     return (
         "<!doctype html><html lang='ko'><head><meta charset='utf-8'>"
-        f"<title>{html.escape(document.title)}</title>"
+        f"<title>{title}</title>"
         "<style>body{font-family:'Malgun Gothic',sans-serif;max-width:820px;margin:2rem auto;"
-        "padding:0 1rem;line-height:1.6;color:#1a1a1a}h1{border-bottom:2px solid #333;padding-bottom:.4rem}"
+        "padding:0 1rem;line-height:1.6;color:#1a1a1a}"
+        ".examtitle{text-align:center;font-size:1.8rem;border:none;margin:.2rem 0 1rem}"
+        "h1{border-bottom:2px solid #333;padding-bottom:.4rem}"
+        ".infohdr{width:100%;border-collapse:collapse;margin-bottom:1.2rem}"
+        ".infohdr td{border:1px solid #888;padding:.5rem;height:1.4rem}"
+        ".infohdr .lbl{background:#eee;text-align:center;font-weight:600;width:9%}"
         f".body{{{col_css}}}"
         ".problem{margin:0 0 1.4rem;padding:1rem;border:1px solid #e2e2e2;border-radius:8px;"
         "break-inside:avoid}"
@@ -550,7 +586,7 @@ def _preview_html(document: Document, assets_dir: Optional[Path], columns: int =
         ".figure{max-width:100%;margin:.6rem 0;border:1px solid #ddd;border-radius:6px}"
         ".solution{margin-top:.8rem;padding:.6rem .8rem;background:#f6f8fa;border-radius:6px}"
         ".solution p{margin:.3rem 0;white-space:pre-wrap}</style></head>"
-        f"<body><h1>{html.escape(document.title)}</h1><div class='body'>"
+        f"<body>{head_html}<div class='body'>"
         + "".join(rows)
         + "</div></body></html>"
     )
