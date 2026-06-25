@@ -167,6 +167,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Force UTF-8 stdout/stderr so Korean text + emoji survive on Windows,
+    # where the console default is cp949 (which can't encode e.g. 🎉).
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
     parser = build_parser()
     args = parser.parse_args(argv)
     # `--json` is global but argparse attaches it pre-subcommand; default if absent.

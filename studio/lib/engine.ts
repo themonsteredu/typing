@@ -36,7 +36,8 @@ export function runEngine(
   return new Promise((resolve, reject) => {
     const child = spawn(pythonBin(), ["-m", "exam_engine.cli", "--json", ...args], {
       cwd: engineDir(),
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      // Force UTF-8 I/O so Korean logs + emoji don't break on Windows (cp949 default).
+      env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" },
     });
 
     let buffer = "";
