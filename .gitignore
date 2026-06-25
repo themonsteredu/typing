@@ -19,6 +19,10 @@ config/settings.local.json
 .env
 .env.local
 
+# Vendor license signing keys — NEVER commit the private key
+engine/tools/license_private_key.pem
+engine/tools/license_public_key.pem
+
 # Work / output
 work/
 output/

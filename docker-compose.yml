@@ -1,0 +1,21 @@
+services:
+  exam-studio:
+    build: .
+    image: exam-studio:latest
+    ports:
+      - "3020:3020"
+    volumes:
+      # Persists settings, license activation, and work files across restarts.
+      - exam-studio-data:/data
+    environment:
+      # Set to "1" to bypass the license gate while developing.
+      EXAM_STUDIO_DEV: "0"
+      # Optional: provide your own signing public key (PEM) instead of the built-in one.
+      # EXAM_STUDIO_LICENSE_PUBKEY: |
+      #   -----BEGIN PUBLIC KEY-----
+      #   ...
+      #   -----END PUBLIC KEY-----
+    restart: unless-stopped
+
+volumes:
+  exam-studio-data:

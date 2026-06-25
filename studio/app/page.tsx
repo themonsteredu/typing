@@ -11,6 +11,7 @@ const STEPS = ["추출", "풀이 생성", "도형 처리", "HWPX 조립"];
 
 export default function HomePage() {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
+  const [licensed, setLicensed] = useState<boolean | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [drag, setDrag] = useState(false);
   const [running, setRunning] = useState(false);
@@ -25,6 +26,10 @@ export default function HomePage() {
       .then((r) => r.json())
       .then((s) => setHasKey(Boolean(s.hasKey)))
       .catch(() => setHasKey(false));
+    fetch("/api/license")
+      .then((r) => r.json())
+      .then((l) => setLicensed(Boolean(l.valid)))
+      .catch(() => setLicensed(false));
   }, []);
 
   useEffect(() => {
@@ -102,6 +107,12 @@ export default function HomePage() {
       <h1>PDF → HWPX 변환</h1>
       <p className="subtitle">수학 시험지 PDF를 업로드하면 문제 추출부터 HWPX 조립까지 자동으로 처리합니다.</p>
 
+      {licensed === false && (
+        <div className="banner warn">
+          이 프로그램을 사용하려면 라이선스 활성화가 필요합니다. <a href="/activate"><b>지금 활성화하기 →</b></a>
+        </div>
+      )}
+
       {hasKey === false && (
         <div className="banner warn">
           AI API 키가 설정되지 않았습니다. <a href="/settings"><b>설정</b></a>에서 키를 저장하면 AI 풀이가
@@ -150,7 +161,7 @@ export default function HomePage() {
         </div>
 
         <div className="row">
-          <button className="btn" onClick={start} disabled={!file || running}>
+          <button className="btn" onClick={start} disabled={!file || running || licensed === false}>
             {running ? "처리 중…" : "파이프라인 실행"}
           </button>
           {done && jobId && (

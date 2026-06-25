@@ -5,5 +5,8 @@ Pillow>=10.0.0
 # AI providers (optional at runtime; pipeline falls back if absent)
 anthropic>=0.40.0
 
+# License verification (Ed25519 signed tokens)
+cryptography>=41.0.0
+
 # Dev / tests
 pytest>=8.0.0

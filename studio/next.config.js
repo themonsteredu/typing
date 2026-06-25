@@ -1,9 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // API routes spawn the Python engine; keep server-only deps out of the bundle.
+  // Self-contained server bundle for Docker (.next/standalone).
+  output: "standalone",
+  // The studio is one app inside a larger repo; trace files from the repo root.
   experimental: {
-    serverComponentsExternalPackages: [],
+    outputFileTracingRoot: require("path").join(__dirname, ".."),
   },
 };
 

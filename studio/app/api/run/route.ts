@@ -1,12 +1,16 @@
 import { NextRequest } from "next/server";
 import path from "node:path";
 import { runEngine, workDir, EngineEvent } from "@/lib/engine";
+import { isLicensed } from "@/lib/license";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // SSE endpoint: runs the full pipeline for a job and streams log events.
 export async function GET(req: NextRequest) {
+  if (!(await isLicensed())) {
+    return new Response("license required", { status: 403 });
+  }
   const jobId = req.nextUrl.searchParams.get("job");
   if (!jobId || !/^[a-f0-9-]{36}$/.test(jobId)) {
     return new Response("invalid job id", { status: 400 });
@@ -27,7 +31,7 @@ export async function GET(req: NextRequest) {
           ["run", input, "--out", output, "--work", path.join(dir, "work")],
           send
         );
-        send({ type: "done", ...result } as EngineEvent);
+        send({ ...result, type: "done" });
       } catch (err) {
         send({ type: "error", message: err instanceof Error ? err.message : String(err) });
       } finally {

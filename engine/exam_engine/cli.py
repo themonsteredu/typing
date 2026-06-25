@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from . import pipeline, settings as settings_mod
+from . import license as license_mod, pipeline, settings as settings_mod
 from .settings import Settings
 
 
@@ -42,8 +42,18 @@ def _emit_result(json_mode: bool, payload: dict) -> None:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+def _require_license(log) -> bool:
+    if license_mod.is_licensed():
+        return True
+    info = license_mod.load()
+    log(f"라이선스가 필요합니다: {info.reason} (활성화: exam_engine.cli license activate <KEY>)")
+    return False
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     log = _make_logger(args.json)
+    if not _require_license(log):
+        return 2
     cfg = settings_mod.load()
     out = Path(args.out)
     work = Path(args.work) if args.work else out.parent / "work"
@@ -99,6 +109,22 @@ def cmd_settings(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_license(args: argparse.Namespace) -> int:
+    if args.action == "status":
+        info = license_mod.load()
+        print(json.dumps(info.to_dict(), ensure_ascii=False, indent=2))
+        return 0 if info.valid else 1
+    # activate
+    try:
+        info = license_mod.activate(args.key)
+    except ValueError as exc:
+        print(f"활성화 실패: {exc}", file=sys.stderr)
+        return 1
+    exp = "무기한" if info.expires_at == 0 else str(info.expires_at)
+    print(f"활성화 완료: {info.subject} (플랜 {info.plan}, 만료 {exp})")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="exam_engine", description="Exam Studio document engine")
     parser.add_argument("--json", action="store_true", help="emit NDJSON progress events")
@@ -131,6 +157,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_set.add_argument("--provider")
     p_set.add_argument("--dpi", type=int)
     p_set.set_defaults(func=cmd_settings)
+
+    p_lic = sub.add_parser("license", help="view or activate a license key")
+    p_lic.add_argument("action", choices=["status", "activate"])
+    p_lic.add_argument("key", nargs="?", help="license token (for activate)")
+    p_lic.set_defaults(func=cmd_license)
 
     return parser
 

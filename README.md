@@ -100,6 +100,45 @@ python -m exam_engine.cli run      exam.pdf   --out output/exam.hwpx
 `preview.html`을 함께 출력합니다. (그림의 본문 내 인라인 *배치*는 문서가 안전하게 열리도록
 현재 본문에는 자리표시자 문단으로 표시하고, 바이너리는 `BinData`로 임베드합니다.)
 
+## 배포 (Docker)
+
+Python 런타임과 장시간 실행 프로세스가 필요해 **서버리스(Vercel 등)에는 올라가지 않습니다.**
+Node + Python을 한 컨테이너에 담아 배포합니다.
+
+```bash
+docker compose up --build      # http://localhost:3020
+```
+
+- 설정/라이선스/작업 파일은 `exam-studio-data` 볼륨(`/data`)에 보존됩니다.
+- 개발 중 라이선스 게이트를 우회하려면 `EXAM_STUDIO_DEV=1`.
+- 프로덕션 빌드는 Next.js standalone 출력(`next build`, `output: "standalone"`)을 사용합니다.
+
+## 라이선스 키 (배포형 판매)
+
+위조 불가능한 **Ed25519 서명 토큰**으로, 라이선스 서버 없이 **오프라인 검증**됩니다.
+같은 토큰을 웹(Node)과 엔진(Python)이 동일하게 검증합니다.
+
+**판매자(최초 1회 키 발급):**
+
+```bash
+cd engine
+# 1) 서명용 키쌍 생성 — 개인키는 절대 외부 유출/커밋 금지
+python tools/license_keygen.py genkeys --out tools/
+#    출력된 공개키 PEM을 exam_engine/license.py 와 studio/lib/license.ts 의
+#    DEFAULT_PUBLIC_KEY_PEM 에 넣거나, 환경변수 EXAM_STUDIO_LICENSE_PUBKEY 로 지정.
+
+# 2) 구매자에게 줄 라이선스 키 발급 (예: 1년)
+python tools/license_keygen.py issue --key tools/license_private_key.pem \
+    --sub "buyer@example.com" --plan pro --days 365   # --days 0 = 무기한
+```
+
+**구매자(활성화):** 웹의 **라이선스** 화면(`/activate`)에 받은 키를 붙여넣고 활성화.
+키는 사용자 컴퓨터 `~/.exam-studio/license.json`(0600)에만 저장되며 외부 전송되지 않습니다.
+미활성 상태에서는 업로드/실행 API가 403으로 차단됩니다.
+
+> 보안 메모: `engine/tools/license_private_key.pem`(개인키)은 `.gitignore`로 커밋이
+> 차단되어 있습니다. 이 키가 유출되면 누구나 라이선스를 위조할 수 있으니 안전하게 보관하세요.
+
 ## 라이선스 / 결과물
 
 생성된 HWPX 문서에 대한 권리는 사용자에게 있으며 자유롭게 배포할 수 있습니다.

@@ -5,6 +5,8 @@ import fs from "node:fs";
 
 // Locate the engine dir and a usable Python interpreter (prefer the project venv).
 export function engineDir(): string {
+  // Configurable so the Docker / standalone layout can point at /app/engine.
+  if (process.env.EXAM_STUDIO_ENGINE_DIR) return process.env.EXAM_STUDIO_ENGINE_DIR;
   return path.join(process.cwd(), "..", "engine");
 }
 
@@ -18,7 +20,7 @@ export function pythonBin(): string {
 }
 
 export interface EngineEvent {
-  type: "log" | "result" | "error";
+  type: "log" | "result" | "error" | "done";
   message?: string;
   [k: string]: unknown;
 }

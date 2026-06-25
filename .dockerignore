@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+**/.venv
+**/__pycache__
+**/*.pyc
+.git
+work/
+output/
+*.log
+# Never bake the vendor signing key into an image.
+engine/tools/license_private_key.pem
+engine/tools/license_public_key.pem

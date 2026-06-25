@@ -3,11 +3,15 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { workDir } from "@/lib/engine";
+import { isLicensed } from "@/lib/license";
 
 export const runtime = "nodejs";
 
 // Accept a PDF upload, store it in a per-job work dir, return the job id.
 export async function POST(req: NextRequest) {
+  if (!(await isLicensed())) {
+    return NextResponse.json({ error: "라이선스가 필요합니다.", code: "UNLICENSED" }, { status: 403 });
+  }
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {
