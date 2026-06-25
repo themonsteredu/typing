@@ -42,8 +42,16 @@ def save_document(document: Document, work_dir: Path) -> Path:
 # Individual stages (each persists document.json so they're independently runnable)
 # --------------------------------------------------------------------------- #
 def run_extract(pdf_path: Path, work_dir: Path, settings: Settings, log: Logger = _noop) -> Document:
-    log(f"PDF에서 텍스트를 추출하는 중: {Path(pdf_path).name}")
-    document = extract_stage.extract(pdf_path, work_dir, dpi=settings.dpi)
+    client = ai.AIClient(settings)
+    if settings.use_vision and client.enabled:
+        log(f"AI 비전으로 페이지를 읽는 중: {Path(pdf_path).name}")
+        document = extract_stage.extract_with_vision(pdf_path, work_dir, client, dpi=settings.dpi, log=log)
+    else:
+        if settings.use_vision and not client.enabled:
+            log("AI 키가 없어 일반 텍스트 추출로 진행합니다(수식이 깨질 수 있음).")
+        else:
+            log(f"PDF에서 텍스트를 추출하는 중: {Path(pdf_path).name}")
+        document = extract_stage.extract(pdf_path, work_dir, dpi=settings.dpi)
     n_figs = sum(len(p.figures) for p in document.problems)
     log(f"문제 {len(document.problems)}개, 도형 {n_figs}개를 인식했습니다.")
     save_document(document, work_dir)

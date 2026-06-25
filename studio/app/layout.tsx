@@ -18,6 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <nav>
             <Link href="/">파이프라인</Link>
             <Link href="/settings">설정</Link>
+            <Link href="/usage">지출</Link>
             <Link href="/activate">라이선스</Link>
           </nav>
         </header>

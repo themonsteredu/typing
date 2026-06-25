@@ -77,10 +77,25 @@ python -m exam_engine.cli build    work/      --out output/exam.hwpx
 python -m exam_engine.cli run      exam.pdf   --out output/exam.hwpx
 ```
 
-## AI 제공자
+## AI 제공자 & 비전 추출
 
 기본은 **Anthropic Claude**입니다. 설정에서 단계별 모델을 지정할 수 있고, 키가 없으면
 파이프라인은 결정적(deterministic) 폴백으로 동작해 전체 흐름을 확인할 수 있습니다.
+
+**AI 비전 추출(권장)**: 설정에서 켜면 각 페이지를 이미지로 만들어 Claude가 **수식까지 읽어**
+문제를 구조화합니다. PDF의 수식은 특수 폰트라 일반 텍스트 추출 시 깨지는데, 비전 방식은 이를
+해결합니다. (키 필요. 끄면 빠른 텍스트 추출로 폴백)
+
+**지출/사용량**: 모든 AI 호출의 토큰 사용량과 예상 비용을 `~/.exam-studio/usage.json`에 집계하고
+웹의 **지출**(`/usage`) 화면에서 보여줍니다. 단가표는 `engine/exam_engine/usage.py`(모델별 $/1M)에
+있습니다. API 키는 설정 화면에서 언제든 변경·삭제할 수 있습니다.
+
+```bash
+# CLI에서도 확인 가능
+python -m exam_engine.cli usage          # 누적 비용/토큰
+python -m exam_engine.cli settings set --use-vision off   # 비전 끄기
+python -m exam_engine.cli settings set --clear-key        # 키 삭제
+```
 
 ## 도형(그림) 자동 검출
 

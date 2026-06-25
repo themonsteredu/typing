@@ -20,6 +20,7 @@ export default function SettingsPage() {
     figures: "claude-opus-4-8",
   });
   const [dpi, setDpi] = useState(200);
+  const [useVision, setUseVision] = useState(true);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export default function SettingsPage() {
         setProvider(s.provider ?? "anthropic");
         setModels({ ...models, ...(s.models ?? {}) });
         setDpi(s.dpi ?? 200);
+        setUseVision(s.useVision !== false);
         setHasKey(Boolean(s.hasKey));
         setKeyHint(s.keyHint ?? "");
         setLoaded(true);
@@ -36,9 +38,9 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function save() {
-    const body: Record<string, unknown> = { provider, models, dpi };
-    if (apiKey.trim()) body.anthropicApiKey = apiKey.trim();
+  async function save(extra: Record<string, unknown> = {}) {
+    const body: Record<string, unknown> = { provider, models, dpi, useVision, ...extra };
+    if (!extra.clearKey && apiKey.trim()) body.anthropicApiKey = apiKey.trim();
     const res = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -50,6 +52,11 @@ export default function SettingsPage() {
     setApiKey("");
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
+  }
+
+  async function clearKey() {
+    if (!confirm("저장된 API 키를 삭제할까요?")) return;
+    await save({ clearKey: true });
   }
 
   if (!loaded) return <p>불러오는 중…</p>;
@@ -83,7 +90,28 @@ export default function SettingsPage() {
           <div className="hint">
             {hasKey
               ? "키가 저장되어 있습니다. 비워두면 기존 키가 유지됩니다."
-              : "키가 없으면 풀이 생성 단계는 폴백(빈 풀이)으로 동작합니다."}
+              : "키가 없으면 비전/풀이 단계가 동작하지 않습니다(일반 텍스트 추출로 폴백)."}
+          </div>
+          {hasKey && (
+            <button className="btn secondary" style={{ marginTop: "0.6rem" }} onClick={clearKey}>
+              저장된 키 삭제
+            </button>
+          )}
+        </div>
+
+        <div className="field">
+          <label>
+            <input
+              type="checkbox"
+              checked={useVision}
+              onChange={(e) => setUseVision(e.target.checked)}
+              style={{ width: "auto", marginRight: "0.5rem" }}
+            />
+            AI 비전으로 문제 읽기 (수식 깨짐 방지, 권장)
+          </label>
+          <div className="hint">
+            페이지를 이미지로 만들어 Claude가 수식까지 읽습니다. 끄면 빠르지만 수식이 깨질 수 있어요.
+            (페이지당 약 수십~수백원의 토큰 비용 발생 — <a href="/usage">지출</a>에서 확인)
           </div>
         </div>
       </div>
@@ -120,7 +148,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <button className="btn" onClick={save}>
+      <button className="btn" onClick={() => save()}>
         저장
       </button>
     </>

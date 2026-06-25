@@ -36,6 +36,9 @@ DEFAULTS: Dict[str, Any] = {
         "figures": "claude-opus-4-8",
     },
     "dpi": 200,
+    # Use Claude vision to read problems (handles math/figures); falls back to
+    # plain text extraction when off or no key.
+    "useVision": True,
 }
 
 
@@ -45,6 +48,7 @@ class Settings:
     anthropic_api_key: str = ""
     models: Dict[str, str] = field(default_factory=lambda: dict(DEFAULTS["models"]))
     dpi: int = 200
+    use_vision: bool = True
 
     # ----- (de)serialization in the JSON shape the web app uses -----
     @classmethod
@@ -55,6 +59,7 @@ class Settings:
             anthropic_api_key=merged.get("anthropicApiKey", ""),
             models=dict(merged.get("models", {})),
             dpi=int(merged.get("dpi", 200)),
+            use_vision=bool(merged.get("useVision", True)),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -63,6 +68,7 @@ class Settings:
             "anthropicApiKey": self.anthropic_api_key,
             "models": self.models,
             "dpi": self.dpi,
+            "useVision": self.use_vision,
         }
 
     def api_key(self) -> str:

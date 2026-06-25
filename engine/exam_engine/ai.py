@@ -7,10 +7,35 @@ shared settings (entered via the web Settings panel) the real model is used.
 
 from __future__ import annotations
 
-from typing import List, Optional
+import base64
+import json
+from typing import List, Optional, Tuple
 
+from . import usage as usage_mod
 from .models import Problem
 from .settings import Settings, load as load_settings
+
+# JSON schema for vision extraction (structured output).
+_EXTRACT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "problems": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "number": {"type": "integer"},
+                    "text": {"type": "string"},
+                    "choices": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["number", "text", "choices"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["problems"],
+    "additionalProperties": False,
+}
 
 
 class AIClient:
@@ -43,8 +68,69 @@ class AIClient:
             system=system,
             messages=[{"role": "user", "content": prompt}],
         )
+        self._record_usage(message, stage)
         parts = [block.text for block in message.content if getattr(block, "type", "") == "text"]
         return "\n".join(parts).strip()
+
+    def _record_usage(self, message, stage: str) -> None:
+        u = getattr(message, "usage", None)
+        if u is None:
+            return
+        try:
+            usage_mod.record(
+                self.settings.model_for(stage),
+                int(getattr(u, "input_tokens", 0) or 0),
+                int(getattr(u, "output_tokens", 0) or 0),
+                cache_read=int(getattr(u, "cache_read_input_tokens", 0) or 0),
+                cache_creation=int(getattr(u, "cache_creation_input_tokens", 0) or 0),
+                stage=stage,
+            )
+        except Exception:
+            pass  # usage tracking must never break the pipeline
+
+    # ----- stage 1 (vision): read problems from a rendered page image -----
+    def extract_problems_from_image(
+        self, image_bytes: bytes, media_type: str = "image/png"
+    ) -> List[Problem]:
+        """Use Claude vision to transcribe problems (math included) from a page."""
+        if not self.enabled:
+            return []
+        client = self._anthropic()
+        b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+        system = (
+            "당신은 한국 수학 시험지를 정확히 디지털화하는 OCR 전문가입니다. "
+            "이미지의 모든 문제를 읽어 번호, 문제 본문, 보기(객관식)로 구조화하세요. "
+            "수식은 사람이 읽을 수 있는 텍스트로 옮기되 의미를 보존하세요(예: x^2, √, ∫, 분수는 a/b). "
+            "보기가 없으면 빈 배열로 두세요."
+        )
+        message = client.messages.create(
+            model=self.settings.model_for("extract"),
+            max_tokens=4096,
+            system=system,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                    {"type": "text", "text": "이 페이지의 문제들을 추출하세요."},
+                ],
+            }],
+            output_config={"format": {"type": "json_schema", "schema": _EXTRACT_SCHEMA}},
+        )
+        self._record_usage(message, "extract")
+        text = "".join(b.text for b in message.content if getattr(b, "type", "") == "text").strip()
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+        problems: List[Problem] = []
+        for p in data.get("problems", []):
+            problems.append(Problem(
+                number=int(p.get("number", 0) or 0),
+                page=0,
+                text=p.get("text", ""),
+                choices=list(p.get("choices", [])),
+            ))
+        return problems
 
     # ----- stage 2: generate a worked solution for one problem -----
     def solve(self, problem: Problem) -> str:

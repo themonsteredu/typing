@@ -10,6 +10,7 @@ export async function GET() {
     provider: s.provider,
     models: s.models,
     dpi: s.dpi,
+    useVision: s.useVision,
     hasKey: Boolean(s.anthropicApiKey),
     keyHint: maskKey(s.anthropicApiKey),
   });
@@ -23,7 +24,11 @@ export async function POST(req: NextRequest) {
   if (typeof body.provider === "string") patch.provider = body.provider;
   if (body.models) patch.models = body.models;
   if (typeof body.dpi === "number") patch.dpi = body.dpi;
-  if (typeof body.anthropicApiKey === "string" && body.anthropicApiKey.trim() !== "") {
+  if (typeof body.useVision === "boolean") patch.useVision = body.useVision;
+  // Empty string with the explicit clear flag removes the stored key.
+  if ((body as { clearKey?: boolean }).clearKey === true) {
+    patch.anthropicApiKey = "";
+  } else if (typeof body.anthropicApiKey === "string" && body.anthropicApiKey.trim() !== "") {
     patch.anthropicApiKey = body.anthropicApiKey.trim();
   }
 

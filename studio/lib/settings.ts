@@ -15,6 +15,7 @@ export interface StudioSettings {
   anthropicApiKey: string;
   models: { extract: string; generate: string; figures: string };
   dpi: number;
+  useVision: boolean;
 }
 
 export const DEFAULT_SETTINGS: StudioSettings = {
@@ -26,6 +27,7 @@ export const DEFAULT_SETTINGS: StudioSettings = {
     figures: "claude-opus-4-8",
   },
   dpi: 200,
+  useVision: true,
 };
 
 export async function loadSettings(): Promise<StudioSettings> {

@@ -216,8 +216,50 @@ def extract(
     return Document(title=title, source=str(pdf_path), problems=problems)
 
 
+def extract_with_vision(
+    pdf_path: Path,
+    work_dir: Path,
+    ai_client,
+    dpi: int = 200,
+    log=lambda _m: None,
+) -> Document:
+    """Extract problems by sending each rendered page image to Claude vision.
+
+    Math and figure-laden problems that plain text extraction garbles are read
+    accurately here. Figures are still detected/attached via PyMuPDF.
+    """
+    pdf_path = Path(pdf_path)
+    work_dir = Path(work_dir)
+    images = render_pages(pdf_path, work_dir / "pages", dpi=dpi)
+
+    problems: List[Problem] = []
+    for page_no, img_path in enumerate(images, start=1):
+        log(f"  비전 분석 {page_no}/{len(images)} 페이지...")
+        try:
+            page_problems = ai_client.extract_problems_from_image(img_path.read_bytes(), "image/png")
+        except Exception as exc:
+            log(f"  (페이지 {page_no} 비전 실패: {exc} — 건너뜀)")
+            page_problems = []
+        for p in page_problems:
+            p.page = page_no
+            problems.append(p)
+
+    # If the model didn't number problems, assign sequential numbers.
+    if problems and all(p.number == 0 for p in problems):
+        for i, p in enumerate(problems, start=1):
+            p.number = i
+
+    document = Document(title=pdf_path.stem or "Exam", source=str(pdf_path), problems=problems)
+    try:
+        assign_figures(problems, pdf_path, work_dir)
+    except Exception:
+        pass
+    return document
+
+
 __all__ = [
     "extract",
+    "extract_with_vision",
     "extract_text_pages",
     "render_pages",
     "split_problems",

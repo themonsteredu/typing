@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from . import license as license_mod, pipeline, settings as settings_mod
+from . import license as license_mod, pipeline, settings as settings_mod, usage as usage_mod
 from .settings import Settings
 
 
@@ -104,6 +104,10 @@ def cmd_settings(args: argparse.Namespace) -> int:
         cfg.provider = args.provider
     if args.dpi:
         cfg.dpi = args.dpi
+    if args.use_vision is not None:
+        cfg.use_vision = args.use_vision == "on"
+    if args.clear_key:
+        cfg.anthropic_api_key = ""
     path = settings_mod.save(cfg)
     print(f"설정을 저장했습니다: {path}")
     return 0
@@ -122,6 +126,15 @@ def cmd_license(args: argparse.Namespace) -> int:
         return 1
     exp = "무기한" if info.expires_at == 0 else str(info.expires_at)
     print(f"활성화 완료: {info.subject} (플랜 {info.plan}, 만료 {exp})")
+    return 0
+
+
+def cmd_usage(args: argparse.Namespace) -> int:
+    if args.action == "reset":
+        usage_mod.reset()
+        print("사용량 기록을 초기화했습니다.")
+        return 0
+    print(json.dumps(usage_mod.summary(), ensure_ascii=False, indent=2))
     return 0
 
 
@@ -156,7 +169,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_set.add_argument("--anthropic-key", dest="anthropic_key")
     p_set.add_argument("--provider")
     p_set.add_argument("--dpi", type=int)
+    p_set.add_argument("--use-vision", choices=["on", "off"], dest="use_vision")
+    p_set.add_argument("--clear-key", action="store_true", help="remove the stored API key")
     p_set.set_defaults(func=cmd_settings)
+
+    p_use = sub.add_parser("usage", help="show AI usage and cost, or reset it")
+    p_use.add_argument("action", nargs="?", choices=["show", "reset"], default="show")
+    p_use.set_defaults(func=cmd_usage)
 
     p_lic = sub.add_parser("license", help="view or activate a license key")
     p_lic.add_argument("action", choices=["status", "activate"])
