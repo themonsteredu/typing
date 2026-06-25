@@ -79,3 +79,4 @@ switch ($choice) {
 Write-Host "`n설치 완료!" -ForegroundColor Green
 Write-Host "실행:  cd `"$Root\studio`"; pnpm dev   (그 후 http://localhost:3020 접속)"
 Write-Host "설정 화면(/settings)에서 Anthropic API 키를 저장하세요."
+Write-Host "본인 테스트(라이선스 잠금 해제)는 run-dev.bat 더블클릭으로 바로 켤 수 있습니다." -ForegroundColor Cyan

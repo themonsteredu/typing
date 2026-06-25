@@ -30,7 +30,12 @@ irm https://raw.githubusercontent.com/themonsteredu/typing/main/bootstrap.ps1 | 
 ```
 
 부트스트랩이 Git → 저장소 클론 → `install.ps1`(Node 22+, Python 3.10+, 의존성 설치)을
-순서대로 처리합니다.
+순서대로 처리합니다. 설치가 끝나면 클론 폴더(`%USERPROFILE%\exam-studio`)의
+**`run-dev.bat`을 더블클릭**하면 개발 서버가 뜨고 브라우저가 자동으로 열립니다.
+
+> `run-dev.bat`/`run-dev.ps1`은 **소유자 본인 테스트용**으로 라이선스 잠금을
+> 해제(`EXAM_STUDIO_DEV=1`)합니다. 고객에게 주는 배포본에서는 쓰지 말고,
+> 고객은 아래 *라이선스 키* 절차로 활성화해서 사용합니다.
 
 ### macOS / Linux
 
@@ -61,6 +66,9 @@ pip install -r requirements.txt
 
 1. **설정**(`/settings`)에서 Anthropic API 키를 입력하고 저장합니다.
    키는 프로젝트 밖 `~/.exam-studio/settings.json`(0600 권한)에 로컬 저장됩니다.
+   - **크롭 모드**(선택): 설정에서 *"크롭 모드 (문제를 원본 그대로 이미지로 삽입)"*를 켜면,
+     재조판 대신 각 문제 영역을 페이지에서 그대로 잘라 이미지로 넣어 수식·그래프·도형이
+     **원본 그대로** 보존됩니다. (API 키 필요, 켜면 비전 읽기보다 우선)
 2. 메인 화면에서 시험지 **PDF를 업로드**합니다.
 3. **파이프라인 실행** → 추출 / 풀이 생성 / 도형 처리 / HWPX 조립 단계가 순차로 진행되고
    로그가 실시간(SSE)으로 표시됩니다.
