@@ -75,6 +75,32 @@ _EXTRACT_SCHEMA = {
     "additionalProperties": False,
 }
 
+# JSON schema for crop mode: per-problem bounding boxes in PNG pixel coords.
+_LOCATE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "problems": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "number": {"type": "integer"},
+                    "bbox": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 4,
+                        "maxItems": 4,
+                    },
+                },
+                "required": ["number", "bbox"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["problems"],
+    "additionalProperties": False,
+}
+
 
 class AIClient:
     def __init__(self, settings: Optional[Settings] = None):
@@ -171,6 +197,95 @@ class AIClient:
                 choices=[sanitize_text(c) for c in p.get("choices", [])],
             ))
         return problems
+
+    # ----- crop mode: locate each problem's pixel box on a rendered page -----
+    def locate_problems_in_image(
+        self, image_bytes: bytes, media_type: str = "image/png"
+    ) -> List[dict]:
+        """Return ``[{'number': int, 'bbox': [x0, y0, x1, y1]}]`` in PNG pixel coords.
+
+        The boxes are in the SAME pixel coordinate space as the supplied image,
+        so the caller can crop the very same PNG without any scaling.
+        """
+        if not self.enabled:
+            return []
+        client = self._anthropic()
+        b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+        system = (
+            "당신은 한국 수학 시험지 페이지 이미지를 분석하는 전문가입니다. "
+            "각 문제가 차지하는 영역을 픽셀 좌표 경계상자(bounding box)로 찾아주세요. "
+            "경계상자는 문제 번호부터 본문, 보기(객관식), 그림·그래프까지 그 문제에 "
+            "속한 모든 내용을 빠짐없이 감싸야 합니다. 좌표는 공급된 이미지와 "
+            "동일한 픽셀 좌표계로, 왼쪽 위가 (0,0)인 [x0, y0, x1, y1] 형식입니다. "
+            "서로 다른 문제의 영역이 겹치지 않게 하고, 머리말·바닥글·페이지 번호는 "
+            "포함하지 마세요. 문제 번호를 알 수 있으면 number에 정수로 적고, "
+            "모르면 0으로 두세요."
+        )
+        message = client.messages.create(
+            model=self.settings.model_for("extract"),
+            max_tokens=4096,
+            system=system,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                    {"type": "text", "text": "이 페이지의 각 문제 영역을 경계상자로 찾아주세요."},
+                ],
+            }],
+            output_config={"format": {"type": "json_schema", "schema": _LOCATE_SCHEMA}},
+        )
+        self._record_usage(message, "extract")
+        text = "".join(b.text for b in message.content if getattr(b, "type", "") == "text").strip()
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+        boxes: List[dict] = []
+        for p in data.get("problems", []):
+            bbox = p.get("bbox") or []
+            if len(bbox) != 4:
+                continue
+            boxes.append({
+                "number": int(p.get("number", 0) or 0),
+                "bbox": [float(v) for v in bbox],
+            })
+        return boxes
+
+    def solve_from_image(
+        self, problem: Problem, image_bytes: bytes, media_type: str = "image/png"
+    ) -> str:
+        """Solve a problem whose content is the cropped image (no text stem)."""
+        if not self.enabled:
+            return _fallback_solution(problem)
+        system = (
+            "당신은 한국 고등학교 수학 시험 문제의 풀이를 작성하는 전문가입니다. "
+            "주어진 문제 이미지를 읽고 단계별로 명확하고 간결하게 풀이를 작성하고, "
+            "마지막 줄에 '정답: '으로 정답을 표시하세요. "
+            "중요: 마크다운(#, **, 목록 기호)이나 LaTeX($, $$, \\frac 등)을 절대 쓰지 마세요."
+        )
+        system += _EQ_INSTRUCTION if self.settings.use_equations else (
+            " 수식은 x^2, a/b, √, ≤, × 같은 평문 기호로 표기하세요."
+        )
+        try:
+            client = self._anthropic()
+            b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+            message = client.messages.create(
+                model=self.settings.model_for("generate"),
+                max_tokens=1500,
+                system=system,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                        {"type": "text", "text": "이 문제 이미지를 풀이하고 마지막 줄에 '정답:'을 표기하세요."},
+                    ],
+                }],
+            )
+            self._record_usage(message, "generate")
+            text = "\n".join(b.text for b in message.content if getattr(b, "type", "") == "text").strip()
+            return sanitize_text(text)
+        except Exception as exc:  # network / auth errors -> graceful fallback
+            return _fallback_solution(problem, error=str(exc))
 
     # ----- stage 2: generate a worked solution for one problem -----
     def solve(self, problem: Problem) -> str:

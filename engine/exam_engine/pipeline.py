@@ -43,11 +43,14 @@ def save_document(document: Document, work_dir: Path) -> Path:
 # --------------------------------------------------------------------------- #
 def run_extract(pdf_path: Path, work_dir: Path, settings: Settings, log: Logger = _noop) -> Document:
     client = ai.AIClient(settings)
-    if settings.use_vision and client.enabled:
+    if settings.crop_mode and client.enabled:
+        log(f"크롭 모드: 문제 영역을 잘라 원본 그대로 이미지로 넣습니다: {Path(pdf_path).name}")
+        document = extract_stage.extract_with_crop(pdf_path, work_dir, client, dpi=settings.dpi, log=log)
+    elif settings.use_vision and client.enabled:
         log(f"AI 비전으로 페이지를 읽는 중: {Path(pdf_path).name}")
         document = extract_stage.extract_with_vision(pdf_path, work_dir, client, dpi=settings.dpi, log=log)
     else:
-        if settings.use_vision and not client.enabled:
+        if (settings.crop_mode or settings.use_vision) and not client.enabled:
             log("AI 키가 없어 일반 텍스트 추출로 진행합니다(수식이 깨질 수 있음).")
         else:
             log(f"PDF에서 텍스트를 추출하는 중: {Path(pdf_path).name}")
@@ -63,7 +66,15 @@ def run_generate(work_dir: Path, settings: Settings, log: Logger = _noop) -> Doc
     client = ai.AIClient(settings)
     log("AI 풀이 생성을 시작합니다." if client.enabled else "AI 키가 없어 폴백 풀이를 채웁니다.")
     for i, problem in enumerate(document.problems, start=1):
-        problem.solution = client.solve(problem)
+        # In crop mode the stem is an image, so solve from the crop instead of text.
+        if settings.crop_mode and problem.figures:
+            src = Path(work_dir) / problem.figures[0].path
+            if src.exists():
+                problem.solution = client.solve_from_image(problem, src.read_bytes())
+            else:
+                problem.solution = client.solve(problem)
+        else:
+            problem.solution = client.solve(problem)
         log(f"  풀이 생성 {i}/{len(document.problems)} (#{problem.number})")
     save_document(document, work_dir)
     return document

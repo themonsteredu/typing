@@ -399,9 +399,86 @@ def extract_with_vision(
     return document
 
 
+def _clamp_bbox(bbox, width: int, height: int, pad: float = 6.0):
+    """Clamp a model-returned bbox to image bounds (with padding); ``None`` if degenerate."""
+    try:
+        x0, y0, x1, y1 = (float(v) for v in bbox)
+    except (TypeError, ValueError):
+        return None
+    if x1 < x0:
+        x0, x1 = x1, x0
+    if y1 < y0:
+        y0, y1 = y1, y0
+    # Reject degenerate boxes by their own size, before padding can inflate them.
+    if x1 - x0 < 8 or y1 - y0 < 8:
+        return None  # a point / hairline — not a real problem region
+    x0 = max(0.0, x0 - pad)
+    y0 = max(0.0, y0 - pad)
+    x1 = min(float(width), x1 + pad)
+    y1 = min(float(height), y1 + pad)
+    return (int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1)))
+
+
+def extract_with_crop(
+    pdf_path: Path,
+    work_dir: Path,
+    ai_client,
+    dpi: int = 200,
+    log=lambda _m: None,
+) -> Document:
+    """Crop mode — let Claude locate each problem's pixel box and crop it as an image.
+
+    The cropped region (preserving the original math/graphs/figures exactly) becomes
+    a :class:`Figure` on an otherwise text-less :class:`Problem`, which the HWPX
+    builder places inline via its existing image path. No re-typesetting happens.
+    """
+    from PIL import Image  # Pillow is a hard dependency (see requirements.txt)
+
+    pdf_path = Path(pdf_path)
+    work_dir = Path(work_dir)
+    images = render_pages(pdf_path, work_dir / "pages", dpi=dpi)
+    crop_dir = work_dir / "crops"
+    crop_dir.mkdir(parents=True, exist_ok=True)
+
+    problems: List[Problem] = []
+    for page_no, img_path in enumerate(images, start=1):
+        log(f"  크롭 분석 {page_no}/{len(images)} 페이지...")
+        try:
+            boxes = ai_client.locate_problems_in_image(img_path.read_bytes(), "image/png")
+        except Exception as exc:
+            log(f"  (페이지 {page_no} 크롭 분석 실패: {exc} — 건너뜀)")
+            boxes = []
+        if not boxes:
+            continue
+        with Image.open(img_path) as im:
+            im = im.convert("RGB")
+            iw, ih = im.size
+            for box in boxes:
+                number = int(box.get("number", 0) or 0)
+                rect = _clamp_bbox(box.get("bbox", []), iw, ih)
+                if rect is None:
+                    continue
+                fid = f"p{page_no}_q{number}"
+                fname = f"{fid}.png"
+                crop = im.crop(rect)
+                crop.save(crop_dir / fname)
+                figure = Figure(id=fid, path=f"crops/{fname}", page=page_no,
+                                width=crop.width, height=crop.height)
+                problems.append(Problem(number=number, page=page_no, text="",
+                                        choices=[], figures=[figure]))
+
+    # If the model didn't number problems, assign sequential numbers.
+    if problems and all(p.number == 0 for p in problems):
+        for i, p in enumerate(problems, start=1):
+            p.number = i
+
+    return Document(title=pdf_path.stem or "Exam", source=str(pdf_path), problems=problems)
+
+
 __all__ = [
     "extract",
     "extract_with_vision",
+    "extract_with_crop",
     "extract_text_pages",
     "render_pages",
     "split_problems",

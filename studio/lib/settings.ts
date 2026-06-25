@@ -20,6 +20,7 @@ export interface StudioSettings {
   generateSolutions: boolean;
   examHeader: boolean;
   useEquations: boolean;
+  cropMode: boolean;
 }
 
 export const DEFAULT_SETTINGS: StudioSettings = {
@@ -36,6 +37,7 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   generateSolutions: true,
   examHeader: true,
   useEquations: true,
+  cropMode: false,
 };
 
 export async function loadSettings(): Promise<StudioSettings> {

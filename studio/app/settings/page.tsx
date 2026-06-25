@@ -21,6 +21,7 @@ export default function SettingsPage() {
   });
   const [dpi, setDpi] = useState(200);
   const [useVision, setUseVision] = useState(true);
+  const [cropMode, setCropMode] = useState(false);
   const [columns, setColumns] = useState(1);
   const [generateSolutions, setGenerateSolutions] = useState(true);
   const [examHeader, setExamHeader] = useState(true);
@@ -35,6 +36,7 @@ export default function SettingsPage() {
         setModels({ ...models, ...(s.models ?? {}) });
         setDpi(s.dpi ?? 200);
         setUseVision(s.useVision !== false);
+        setCropMode(Boolean(s.cropMode));
         setColumns(s.columns ?? 1);
         setGenerateSolutions(s.generateSolutions !== false);
         setExamHeader(s.examHeader !== false);
@@ -48,7 +50,7 @@ export default function SettingsPage() {
 
   async function save(extra: Record<string, unknown> = {}) {
     const body: Record<string, unknown> = {
-      provider, models, dpi, useVision, columns, generateSolutions, examHeader, useEquations,
+      provider, models, dpi, useVision, cropMode, columns, generateSolutions, examHeader, useEquations,
       ...extra,
     };
     if (!extra.clearKey && apiKey.trim()) body.anthropicApiKey = apiKey.trim();
@@ -138,6 +140,23 @@ export default function SettingsPage() {
           </label>
           <div className="hint">
             켜면 AI가 한글 수식 스크립트로 작성해 제대로 된 수식으로 들어갑니다. 끄면 평문(x^2, a/b).
+          </div>
+        </div>
+
+        <div className="field">
+          <label>
+            <input
+              type="checkbox"
+              checked={cropMode}
+              onChange={(e) => setCropMode(e.target.checked)}
+              style={{ width: "auto", marginRight: "0.5rem" }}
+            />
+            크롭 모드 (문제를 원본 그대로 이미지로 삽입)
+          </label>
+          <div className="hint">
+            AI가 각 문제 영역을 찾아 페이지에서 그대로 잘라 넣습니다. 수식·그래프·도형이 원본 그대로
+            보존돼 깨지지 않아요. (API 키 필요, 켜면 ‘AI 비전으로 문제 읽기’보다 우선 적용 —
+            페이지마다 토큰 비용 발생, <a href="/usage">지출</a>에서 확인)
           </div>
         </div>
       </div>

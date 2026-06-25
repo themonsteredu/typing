@@ -121,6 +121,8 @@ def cmd_settings(args: argparse.Namespace) -> int:
         cfg.exam_header = args.header == "on"
     if args.equations is not None:
         cfg.use_equations = args.equations == "on"
+    if args.crop_mode is not None:
+        cfg.crop_mode = args.crop_mode == "on"
     if args.clear_key:
         cfg.anthropic_api_key = ""
     path = settings_mod.save(cfg)
@@ -192,6 +194,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_set.add_argument("--solutions", choices=["on", "off"])
     p_set.add_argument("--header", choices=["on", "off"], help="exam-style title/name header")
     p_set.add_argument("--equations", choices=["on", "off"], help="render math as 한글 수식 objects")
+    p_set.add_argument("--crop-mode", choices=["on", "off"], dest="crop_mode",
+                       help="문제 영역을 잘라 원본 그대로 이미지로 삽입 (비전 우선)")
     p_set.add_argument("--clear-key", action="store_true", help="remove the stored API key")
     p_set.set_defaults(func=cmd_settings)
 

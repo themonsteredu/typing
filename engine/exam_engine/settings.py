@@ -47,6 +47,10 @@ DEFAULTS: Dict[str, Any] = {
     "examHeader": True,
     # Render math as real 한글 수식 objects (cleaner than plain text).
     "useEquations": True,
+    # Crop mode: instead of re-typesetting, Claude locates each problem's pixel
+    # box and the region is cropped from the page and placed as an image. This
+    # preserves the original appearance exactly. Requires vision (API key).
+    "cropMode": False,
 }
 
 
@@ -61,6 +65,7 @@ class Settings:
     generate_solutions: bool = True
     exam_header: bool = True
     use_equations: bool = True
+    crop_mode: bool = False
 
     # ----- (de)serialization in the JSON shape the web app uses -----
     @classmethod
@@ -76,6 +81,7 @@ class Settings:
             generate_solutions=bool(merged.get("generateSolutions", True)),
             exam_header=bool(merged.get("examHeader", True)),
             use_equations=bool(merged.get("useEquations", True)),
+            crop_mode=bool(merged.get("cropMode", False)),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -89,6 +95,7 @@ class Settings:
             "generateSolutions": self.generate_solutions,
             "examHeader": self.exam_header,
             "useEquations": self.use_equations,
+            "cropMode": self.crop_mode,
         }
 
     def api_key(self) -> str:
