@@ -9,11 +9,40 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from typing import List, Optional, Tuple
 
 from . import usage as usage_mod
 from .models import Problem
 from .settings import Settings, load as load_settings
+
+
+def sanitize_text(text: str) -> str:
+    """Strip markdown/LaTeX so it reads as plain text in HWPX/한글.
+
+    The model sometimes returns `## 풀이`, `**bold**`, `$$...$$`, `\\frac{a}{b}`.
+    None of that renders in 한글, so flatten it to readable plain-text math.
+    """
+    if not text:
+        return text
+    # \frac{a}{b} -> (a)/(b)
+    text = re.sub(r"\\d?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}", r"(\1)/(\2)", text)
+    # common LaTeX commands -> unicode/plain
+    for pat, rep in {
+        r"\\times": "×", r"\\div": "÷", r"\\cdot": "·", r"\\pm": "±",
+        r"\\leq": "≤", r"\\geq": "≥", r"\\le\b": "≤", r"\\ge\b": "≥",
+        r"\\neq": "≠", r"\\sqrt": "√", r"\\pi": "π", r"\\infty": "∞",
+        r"\\left": "", r"\\right": "", r"\\,": " ", r"\\\\": "\n",
+    }.items():
+        text = re.sub(pat, rep, text)
+    # drop $$ / $ math delimiters (keep the inner content)
+    text = text.replace("$$", "").replace("$", "")
+    # markdown headers, bold/italic, inline code
+    text = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", text)
+    text = text.replace("**", "").replace("__", "").replace("`", "")
+    # collapse excess blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 # JSON schema for vision extraction (structured output).
 _EXTRACT_SCHEMA = {
@@ -127,8 +156,8 @@ class AIClient:
             problems.append(Problem(
                 number=int(p.get("number", 0) or 0),
                 page=0,
-                text=p.get("text", ""),
-                choices=list(p.get("choices", [])),
+                text=sanitize_text(p.get("text", "")),
+                choices=[sanitize_text(c) for c in p.get("choices", [])],
             ))
         return problems
 
@@ -138,11 +167,13 @@ class AIClient:
             return _fallback_solution(problem)
         system = (
             "당신은 한국 고등학교 수학 시험 문제의 풀이를 작성하는 전문가입니다. "
-            "단계별로 명확하고 간결하게 풀이를 작성하고, 마지막 줄에 '정답: '으로 정답을 표시하세요."
+            "단계별로 명확하고 간결하게 풀이를 작성하고, 마지막 줄에 '정답: '으로 정답을 표시하세요. "
+            "중요: 마크다운(#, **, 목록 기호)이나 LaTeX($, $$, \\frac 등)을 절대 쓰지 마세요. "
+            "한글 문서에 그대로 들어갈 평문으로 쓰고, 수식은 x^2, a/b, √, ≤, × 같은 평문 기호로 표기하세요."
         )
         prompt = _problem_prompt(problem)
         try:
-            return self._complete("generate", system, prompt, max_tokens=1500)
+            return sanitize_text(self._complete("generate", system, prompt, max_tokens=1500))
         except Exception as exc:  # network / auth errors -> graceful fallback
             return _fallback_solution(problem, error=str(exc))
 
