@@ -16,6 +16,8 @@ export interface StudioSettings {
   models: { extract: string; generate: string; figures: string };
   dpi: number;
   useVision: boolean;
+  columns: number;
+  generateSolutions: boolean;
 }
 
 export const DEFAULT_SETTINGS: StudioSettings = {
@@ -28,6 +30,8 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   },
   dpi: 200,
   useVision: true,
+  columns: 1,
+  generateSolutions: true,
 };
 
 export async function loadSettings(): Promise<StudioSettings> {

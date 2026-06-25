@@ -21,6 +21,8 @@ export default function SettingsPage() {
   });
   const [dpi, setDpi] = useState(200);
   const [useVision, setUseVision] = useState(true);
+  const [columns, setColumns] = useState(1);
+  const [generateSolutions, setGenerateSolutions] = useState(true);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -31,6 +33,8 @@ export default function SettingsPage() {
         setModels({ ...models, ...(s.models ?? {}) });
         setDpi(s.dpi ?? 200);
         setUseVision(s.useVision !== false);
+        setColumns(s.columns ?? 1);
+        setGenerateSolutions(s.generateSolutions !== false);
         setHasKey(Boolean(s.hasKey));
         setKeyHint(s.keyHint ?? "");
         setLoaded(true);
@@ -39,7 +43,9 @@ export default function SettingsPage() {
   }, []);
 
   async function save(extra: Record<string, unknown> = {}) {
-    const body: Record<string, unknown> = { provider, models, dpi, useVision, ...extra };
+    const body: Record<string, unknown> = {
+      provider, models, dpi, useVision, columns, generateSolutions, ...extra,
+    };
     if (!extra.clearKey && apiKey.trim()) body.anthropicApiKey = apiKey.trim();
     const res = await fetch("/api/settings", {
       method: "POST",
@@ -145,6 +151,34 @@ export default function SettingsPage() {
             value={dpi}
             onChange={(e) => setDpi(Number(e.target.value))}
           />
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3 style={{ marginTop: 0 }}>문서 레이아웃</h3>
+        <div className="field">
+          <label>단 나누기</label>
+          <select value={columns} onChange={(e) => setColumns(Number(e.target.value))}>
+            <option value={1}>1단 (기본)</option>
+            <option value={2}>2단 (시험지 형식)</option>
+          </select>
+          <div className="hint">
+            2단은 신문식 좌→우 배치입니다. (실제 한글에서 열어 확인을 권장 — 문제 있으면 1단으로 되돌리세요)
+          </div>
+        </div>
+        <div className="field">
+          <label>
+            <input
+              type="checkbox"
+              checked={generateSolutions}
+              onChange={(e) => setGenerateSolutions(e.target.checked)}
+              style={{ width: "auto", marginRight: "0.5rem" }}
+            />
+            기본으로 풀이(해설) 생성
+          </label>
+          <div className="hint">
+            여기는 기본값이고, 메인 화면에서 변환할 때마다 끄고 켤 수 있어요.
+          </div>
         </div>
       </div>
 

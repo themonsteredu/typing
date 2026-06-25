@@ -55,9 +55,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not _require_license(log):
         return 2
     cfg = settings_mod.load()
+    if args.columns:
+        cfg.columns = args.columns
     out = Path(args.out)
     work = Path(args.work) if args.work else out.parent / "work"
-    result = pipeline.run(Path(args.pdf), out, work_dir=work, settings=cfg, log=log)
+    solutions = None
+    if args.no_solutions:
+        solutions = False
+    elif args.solutions:
+        solutions = True
+    result = pipeline.run(Path(args.pdf), out, work_dir=work, settings=cfg, log=log, solutions=solutions)
     _emit_result(args.json, {"output": str(result), "preview": str(result.with_suffix(".html"))})
     return 0
 
@@ -106,6 +113,10 @@ def cmd_settings(args: argparse.Namespace) -> int:
         cfg.dpi = args.dpi
     if args.use_vision is not None:
         cfg.use_vision = args.use_vision == "on"
+    if args.columns is not None:
+        cfg.columns = args.columns
+    if args.solutions is not None:
+        cfg.generate_solutions = args.solutions == "on"
     if args.clear_key:
         cfg.anthropic_api_key = ""
     path = settings_mod.save(cfg)
@@ -147,6 +158,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("pdf")
     p_run.add_argument("--out", required=True)
     p_run.add_argument("--work")
+    p_run.add_argument("--columns", type=int, help="1 or 2 (newspaper layout)")
+    p_run.add_argument("--no-solutions", action="store_true", help="problems only, skip 풀이")
+    p_run.add_argument("--solutions", action="store_true", help="force-include 풀이")
     p_run.set_defaults(func=cmd_run)
 
     p_ext = sub.add_parser("extract", help="extract problems from a PDF")
@@ -170,6 +184,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_set.add_argument("--provider")
     p_set.add_argument("--dpi", type=int)
     p_set.add_argument("--use-vision", choices=["on", "off"], dest="use_vision")
+    p_set.add_argument("--columns", type=int, choices=[1, 2])
+    p_set.add_argument("--solutions", choices=["on", "off"])
     p_set.add_argument("--clear-key", action="store_true", help="remove the stored API key")
     p_set.set_defaults(func=cmd_settings)
 

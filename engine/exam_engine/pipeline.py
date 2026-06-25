@@ -83,7 +83,9 @@ def run_build(work_dir: Path, out_path: Path, settings: Settings, log: Logger = 
     n_figs = sum(len(p.figures) for p in document.problems)
     if n_figs:
         log(f"도형 {n_figs}개를 문서에 포함합니다.")
-    result = hwpx.build(document, out_path, assets_dir=Path(work_dir))
+    if settings.columns and settings.columns > 1:
+        log(f"{settings.columns}단 레이아웃으로 배치합니다.")
+    result = hwpx.build(document, out_path, assets_dir=Path(work_dir), columns=settings.columns)
     log(f"완료: {result}")
     return result
 
@@ -97,15 +99,21 @@ def run(
     work_dir: Optional[Path] = None,
     settings: Optional[Settings] = None,
     log: Logger = _noop,
+    solutions: Optional[bool] = None,
 ) -> Path:
     settings = settings or load_settings()
     work_dir = Path(work_dir) if work_dir else Path(out_path).with_suffix("").parent / "work"
     work_dir.mkdir(parents=True, exist_ok=True)
+    # Per-run override beats the stored default.
+    want_solutions = settings.generate_solutions if solutions is None else solutions
 
     log("=== 1/4 추출 ===")
     run_extract(pdf_path, work_dir, settings, log)
-    log("=== 2/4 풀이 생성 ===")
-    run_generate(work_dir, settings, log)
+    if want_solutions:
+        log("=== 2/4 풀이 생성 ===")
+        run_generate(work_dir, settings, log)
+    else:
+        log("=== 2/4 풀이 생성 (건너뜀 — 문제만) ===")
     log("=== 3/4 도형 처리 ===")
     run_figures(work_dir, settings, log)
     log("=== 4/4 HWPX 조립 ===")

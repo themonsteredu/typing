@@ -39,6 +39,10 @@ DEFAULTS: Dict[str, Any] = {
     # Use Claude vision to read problems (handles math/figures); falls back to
     # plain text extraction when off or no key.
     "useVision": True,
+    # Body layout: 1 = single column, 2 = newspaper two-column (like an exam).
+    "columns": 1,
+    # Generate AI worked solutions. Off = problems only, no 풀이.
+    "generateSolutions": True,
 }
 
 
@@ -49,6 +53,8 @@ class Settings:
     models: Dict[str, str] = field(default_factory=lambda: dict(DEFAULTS["models"]))
     dpi: int = 200
     use_vision: bool = True
+    columns: int = 1
+    generate_solutions: bool = True
 
     # ----- (de)serialization in the JSON shape the web app uses -----
     @classmethod
@@ -60,6 +66,8 @@ class Settings:
             models=dict(merged.get("models", {})),
             dpi=int(merged.get("dpi", 200)),
             use_vision=bool(merged.get("useVision", True)),
+            columns=int(merged.get("columns", 1) or 1),
+            generate_solutions=bool(merged.get("generateSolutions", True)),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -69,6 +77,8 @@ class Settings:
             "models": self.models,
             "dpi": self.dpi,
             "useVision": self.use_vision,
+            "columns": self.columns,
+            "generateSolutions": self.generate_solutions,
         }
 
     def api_key(self) -> str:

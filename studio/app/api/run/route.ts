@@ -19,6 +19,10 @@ export async function GET(req: NextRequest) {
   const dir = workDir(jobId);
   const input = path.join(dir, "input.pdf");
   const output = path.join(dir, "output.hwpx");
+  // Per-run override: ?solutions=0 skips 풀이 generation for this document.
+  const noSolutions = req.nextUrl.searchParams.get("solutions") === "0";
+  const runArgs = ["run", input, "--out", output, "--work", path.join(dir, "work")];
+  if (noSolutions) runArgs.push("--no-solutions");
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -27,10 +31,7 @@ export async function GET(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       };
       try {
-        const result = await runEngine(
-          ["run", input, "--out", output, "--work", path.join(dir, "work")],
-          send
-        );
+        const result = await runEngine(runArgs, send);
         send({ ...result, type: "done" });
       } catch (err) {
         send({ type: "error", message: err instanceof Error ? err.message : String(err) });

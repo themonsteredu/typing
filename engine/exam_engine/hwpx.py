@@ -66,12 +66,14 @@ class _BinItem:
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
-def build(document: Document, out_path: Path, assets_dir: Optional[Path] = None) -> Path:
+def build(document: Document, out_path: Path, assets_dir: Optional[Path] = None,
+          columns: int = 1) -> Path:
     """Write ``document`` to ``out_path`` (an ``.hwpx`` file).
 
     Prefers the validated ``pyhwpxlib`` backend (produces Hancom-openable files);
     falls back to the built-in writer if the library is unavailable. ``assets_dir``
     is the work directory holding figure files referenced by ``Problem.figures``.
+    ``columns`` (1 or 2) lays the body out in newspaper columns like a real exam.
     An always-correct ``preview.html`` is written alongside either way.
     """
     out_path = Path(out_path)
@@ -79,13 +81,52 @@ def build(document: Document, out_path: Path, assets_dir: Optional[Path] = None)
 
     try:
         _build_with_pyhwpxlib(document, out_path, assets_dir)
+        if columns and columns > 1:
+            _apply_columns(out_path, columns)
     except Exception:
         # Library missing or failed -> fall back to the built-in writer so a
         # file is always produced (and the HTML preview always renders).
         _build_legacy(document, out_path, assets_dir)
 
-    write_preview_html(document, out_path.with_suffix(".html"), assets_dir)
+    write_preview_html(document, out_path.with_suffix(".html"), assets_dir, columns)
     return out_path
+
+
+def _apply_columns(out_path: Path, col_count: int, gap: int = 2268) -> None:
+    """Set newspaper columns by bumping the section's existing ``hp:colPr``.
+
+    pyhwpxlib already emits a single-column ``<hp:colPr colCount="1" .../>``; we
+    rewrite its ``colCount`` (and gap). Best-effort: a no-op if the element isn't
+    found, so it can never corrupt an otherwise-valid file. (``gap`` in HWPUNIT.)
+    """
+    import re
+
+    with zipfile.ZipFile(out_path) as zin:
+        infos = zin.infolist()
+        contents = {i.filename: zin.read(i.filename) for i in infos}
+
+    sec = contents.get("Contents/section0.xml")
+    if not sec:
+        return
+    text = sec.decode("utf-8")
+
+    def _bump(match: "re.Match[str]") -> str:
+        tag = match.group(0)
+        tag = re.sub(r'colCount="\d+"', f'colCount="{int(col_count)}"', tag)
+        if "sameGap=" in tag:
+            tag = re.sub(r'sameGap="\d+"', f'sameGap="{int(gap)}"', tag)
+        return tag
+
+    new_text = re.sub(r"<hp:colPr\b[^>]*/>", _bump, text, count=1)
+    if new_text == text:
+        return
+    contents["Contents/section0.xml"] = new_text.encode("utf-8")
+
+    with zipfile.ZipFile(out_path, "w") as zout:
+        for info in infos:  # preserve order + per-entry compression (mimetype stays STORED)
+            zi = zipfile.ZipInfo(info.filename)
+            zi.compress_type = info.compress_type
+            zout.writestr(zi, contents[info.filename])
 
 
 def _build_with_pyhwpxlib(document: Document, out_path: Path, assets_dir: Optional[Path]) -> Path:
@@ -144,10 +185,11 @@ def _build_legacy(document: Document, out_path: Path, assets_dir: Optional[Path]
     return out_path
 
 
-def write_preview_html(document: Document, out_path: Path, assets_dir: Optional[Path] = None) -> Path:
+def write_preview_html(document: Document, out_path: Path, assets_dir: Optional[Path] = None,
+                       columns: int = 1) -> Path:
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(_preview_html(document, assets_dir), encoding="utf-8")
+    out_path.write_text(_preview_html(document, assets_dir, columns), encoding="utf-8")
     return out_path
 
 
@@ -465,7 +507,7 @@ def _preview_text(document: Document) -> str:
     return "\n".join(lines)
 
 
-def _preview_html(document: Document, assets_dir: Optional[Path]) -> str:
+def _preview_html(document: Document, assets_dir: Optional[Path], columns: int = 1) -> str:
     def esc(s: str) -> str:
         return html.escape(s).replace("\n", "<br/>")
 
@@ -493,19 +535,24 @@ def _preview_html(document: Document, assets_dir: Optional[Path]) -> str:
             f"<section class='problem'><h3>{p.number}.</h3>"
             f"<p class='stem'>{esc(p.text)}</p>{choices_html}{figures_html}{solution}</section>"
         )
+    col_css = (
+        f"column-count:{int(columns)};column-gap:2rem;" if columns and columns > 1 else ""
+    )
     return (
         "<!doctype html><html lang='ko'><head><meta charset='utf-8'>"
         f"<title>{html.escape(document.title)}</title>"
         "<style>body{font-family:'Malgun Gothic',sans-serif;max-width:820px;margin:2rem auto;"
         "padding:0 1rem;line-height:1.6;color:#1a1a1a}h1{border-bottom:2px solid #333;padding-bottom:.4rem}"
-        ".problem{margin:1.4rem 0;padding:1rem;border:1px solid #e2e2e2;border-radius:8px}"
+        f".body{{{col_css}}}"
+        ".problem{margin:0 0 1.4rem;padding:1rem;border:1px solid #e2e2e2;border-radius:8px;"
+        "break-inside:avoid}"
         ".problem h3{margin:.2rem 0;color:#0b5}.choices{margin:.4rem 0}"
         ".figure{max-width:100%;margin:.6rem 0;border:1px solid #ddd;border-radius:6px}"
         ".solution{margin-top:.8rem;padding:.6rem .8rem;background:#f6f8fa;border-radius:6px}"
         ".solution p{margin:.3rem 0;white-space:pre-wrap}</style></head>"
-        f"<body><h1>{html.escape(document.title)}</h1>"
+        f"<body><h1>{html.escape(document.title)}</h1><div class='body'>"
         + "".join(rows)
-        + "</body></html>"
+        + "</div></body></html>"
     )
 
 

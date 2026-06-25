@@ -12,6 +12,7 @@ const STEPS = ["추출", "풀이 생성", "도형 처리", "HWPX 조립"];
 export default function HomePage() {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [licensed, setLicensed] = useState<boolean | null>(null);
+  const [withSolutions, setWithSolutions] = useState(true);
   const [file, setFile] = useState<File | null>(null);
   const [drag, setDrag] = useState(false);
   const [running, setRunning] = useState(false);
@@ -65,7 +66,7 @@ export default function HomePage() {
       append(`업로드 완료: ${file.name}`);
 
       await new Promise<void>((resolve) => {
-        const es = new EventSource(`/api/run?job=${id}`);
+        const es = new EventSource(`/api/run?job=${id}&solutions=${withSolutions ? 1 : 0}`);
         es.onmessage = (ev) => {
           const data = JSON.parse(ev.data);
           if (data.type === "log" && data.message) {
@@ -159,6 +160,16 @@ export default function HomePage() {
             </div>
           ))}
         </div>
+
+        <label className="row" style={{ margin: "0 0 0.8rem", gap: "0.5rem" }}>
+          <input
+            type="checkbox"
+            checked={withSolutions}
+            onChange={(e) => setWithSolutions(e.target.checked)}
+            style={{ width: "auto" }}
+          />
+          풀이(해설) 포함 — 끄면 문제만 추출합니다
+        </label>
 
         <div className="row">
           <button className="btn" onClick={start} disabled={!file || running || licensed === false}>
