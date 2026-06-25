@@ -2,6 +2,7 @@ import zipfile
 from pathlib import Path
 
 from exam_engine.hwpx import build, MIMETYPE
+from exam_engine.hwpx import _build_legacy as build_legacy
 from exam_engine.models import Document, Problem
 
 
@@ -24,14 +25,14 @@ def _sample_doc() -> Document:
 
 def test_build_produces_valid_zip(tmp_path: Path):
     out = tmp_path / "exam.hwpx"
-    result = build(_sample_doc(), out)
+    result = build_legacy(_sample_doc(), out)
     assert result.exists()
     assert zipfile.is_zipfile(result)
 
 
 def test_mimetype_is_first_and_stored(tmp_path: Path):
     out = tmp_path / "exam.hwpx"
-    build(_sample_doc(), out)
+    build_legacy(_sample_doc(), out)
     with zipfile.ZipFile(out) as zf:
         infos = zf.infolist()
         assert infos[0].filename == "mimetype"
@@ -41,7 +42,7 @@ def test_mimetype_is_first_and_stored(tmp_path: Path):
 
 def test_contains_required_entries(tmp_path: Path):
     out = tmp_path / "exam.hwpx"
-    build(_sample_doc(), out)
+    build_legacy(_sample_doc(), out)
     with zipfile.ZipFile(out) as zf:
         names = set(zf.namelist())
     for required in [
@@ -60,7 +61,7 @@ def test_contains_required_entries(tmp_path: Path):
 
 def test_body_contains_problem_text(tmp_path: Path):
     out = tmp_path / "exam.hwpx"
-    build(_sample_doc(), out)
+    build_legacy(_sample_doc(), out)
     with zipfile.ZipFile(out) as zf:
         section = zf.read("Contents/section0.xml").decode("utf-8")
         preview = zf.read("Preview/PrvText.txt").decode("utf-8")
@@ -73,7 +74,7 @@ def test_section_xml_is_well_formed(tmp_path: Path):
     import xml.dom.minidom as minidom
 
     out = tmp_path / "exam.hwpx"
-    build(_sample_doc(), out)
+    build_legacy(_sample_doc(), out)
     with zipfile.ZipFile(out) as zf:
         for entry in ["Contents/section0.xml", "Contents/header.xml", "Contents/content.hpf"]:
             minidom.parseString(zf.read(entry))  # raises if malformed
@@ -81,7 +82,7 @@ def test_section_xml_is_well_formed(tmp_path: Path):
 
 def test_preview_html_written(tmp_path: Path):
     out = tmp_path / "exam.hwpx"
-    build(_sample_doc(), out)
+    build(_sample_doc(), out)  # dispatcher writes the preview
     html = out.with_suffix(".html")
     assert html.exists()
     assert "2026 모의고사 수학" in html.read_text(encoding="utf-8")

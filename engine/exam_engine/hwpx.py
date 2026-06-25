@@ -69,9 +69,58 @@ class _BinItem:
 def build(document: Document, out_path: Path, assets_dir: Optional[Path] = None) -> Path:
     """Write ``document`` to ``out_path`` (an ``.hwpx`` file).
 
-    ``assets_dir`` is the work directory holding figure files referenced by
-    ``Problem.figures`` (relative paths). When omitted, figures are skipped.
+    Prefers the validated ``pyhwpxlib`` backend (produces Hancom-openable files);
+    falls back to the built-in writer if the library is unavailable. ``assets_dir``
+    is the work directory holding figure files referenced by ``Problem.figures``.
+    An always-correct ``preview.html`` is written alongside either way.
     """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        _build_with_pyhwpxlib(document, out_path, assets_dir)
+    except Exception:
+        # Library missing or failed -> fall back to the built-in writer so a
+        # file is always produced (and the HTML preview always renders).
+        _build_legacy(document, out_path, assets_dir)
+
+    write_preview_html(document, out_path.with_suffix(".html"), assets_dir)
+    return out_path
+
+
+def _build_with_pyhwpxlib(document: Document, out_path: Path, assets_dir: Optional[Path]) -> Path:
+    """Build the HWPX with pyhwpxlib (raises ImportError if not installed)."""
+    from pyhwpxlib import HwpxBuilder
+
+    builder = HwpxBuilder()
+    builder.add_heading(document.title or "Exam", level=1)
+
+    for problem in document.problems:
+        builder.add_paragraph(f"{problem.number}. {problem.text}".strip())
+        for i, choice in enumerate(problem.choices):
+            mark = "①②③④⑤⑥⑦⑧⑨⑩"[i] if i < 10 else f"({i + 1})"
+            builder.add_paragraph(f"   {mark} {choice}")
+        if assets_dir is not None:
+            for fig in problem.figures:
+                src = Path(assets_dir) / fig.path
+                if src.exists():
+                    try:
+                        builder.add_image(str(src))
+                    except Exception:
+                        pass  # a bad image must not abort the whole document
+        if problem.solution:
+            builder.add_paragraph("[풀이]", bold=True)
+            for line in problem.solution.splitlines() or [""]:
+                if line.strip():
+                    builder.add_paragraph(line)
+        builder.add_paragraph("")  # spacer between problems
+
+    builder.save(str(out_path))
+    return out_path
+
+
+def _build_legacy(document: Document, out_path: Path, assets_dir: Optional[Path] = None) -> Path:
+    """Built-in fallback HWPX writer (used when pyhwpxlib is unavailable)."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -92,8 +141,6 @@ def build(document: Document, out_path: Path, assets_dir: Optional[Path] = None)
         zf.writestr("META-INF/container.xml", _container_xml())
         zf.writestr("META-INF/manifest.xml", _manifest_xml(bins))
 
-    # Always-correct, verifiable rendering next to the HWPX.
-    write_preview_html(document, out_path.with_suffix(".html"), assets_dir)
     return out_path
 
 
@@ -468,4 +515,4 @@ def _stored(name: str) -> zipfile.ZipInfo:
     return info
 
 
-__all__ = ["build", "write_preview_html", "MIMETYPE"]
+__all__ = ["build", "write_preview_html", "MIMETYPE", "_build_legacy"]

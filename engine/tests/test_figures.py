@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from exam_engine.hwpx import build
+# BinData embedding is a feature of the built-in writer; test it directly.
+from exam_engine.hwpx import _build_legacy as build, build as build_full
 from exam_engine.models import Document, Figure, Problem
 
 
@@ -64,7 +65,7 @@ def test_preview_html_inlines_figure(tmp_path: Path):
     assets = tmp_path / "work"
     _write_png(assets / "figures" / "p1_img0.png")
     out = tmp_path / "exam.hwpx"
-    build(_doc_with_figure("figures/p1_img0.png"), out, assets_dir=assets)
+    build_full(_doc_with_figure("figures/p1_img0.png"), out, assets_dir=assets)
     html = out.with_suffix(".html").read_text(encoding="utf-8")
     assert "data:image/png;base64," in html
 

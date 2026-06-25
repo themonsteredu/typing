@@ -2,6 +2,9 @@
 PyMuPDF>=1.24.0
 Pillow>=10.0.0
 
+# HWPX generation (validated, Hancom-openable output)
+pyhwpxlib>=0.18.0
+
 # AI providers (optional at runtime; pipeline falls back if absent)
 anthropic>=0.40.0
 
