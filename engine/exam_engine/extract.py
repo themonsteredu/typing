@@ -130,8 +130,21 @@ def detect_figures(pdf_path: Path, work_dir: Path) -> Dict[int, List[Tuple[float
 
     with fitz.open(pdf_path) as doc:
         for page_no, page in enumerate(doc, start=1):
+            pw = float(page.rect.width) or 1.0
+            ph = float(page.rect.height) or 1.0
             for idx, info in enumerate(page.get_images(full=True)):
                 xref = info[0]
+                try:
+                    rects = page.get_image_rects(xref)
+                    rect = rects[0] if rects else None
+                except Exception:
+                    rect = None
+
+                # Skip header banners, full-page scans, thin rules, and tiny icons,
+                # which are not real problem figures.
+                if rect is not None and not _is_real_figure(rect, pw, ph):
+                    continue
+
                 try:
                     base = doc.extract_image(xref)
                 except Exception:
@@ -141,12 +154,6 @@ def detect_figures(pdf_path: Path, work_dir: Path) -> Dict[int, List[Tuple[float
                 fname = f"{fid}.{ext}"
                 (fig_dir / fname).write_bytes(base["image"])
 
-                try:
-                    rects = page.get_image_rects(xref)
-                    y_top = float(rects[0].y0) if rects else 0.0
-                except Exception:
-                    y_top = 0.0
-
                 figure = Figure(
                     id=fid,
                     path=f"figures/{fname}",
@@ -154,8 +161,26 @@ def detect_figures(pdf_path: Path, work_dir: Path) -> Dict[int, List[Tuple[float
                     width=int(base.get("width", 0)),
                     height=int(base.get("height", 0)),
                 )
-                by_page.setdefault(page_no, []).append((y_top, figure))
+                by_page.setdefault(page_no, []).append((float(rect.y0) if rect else 0.0, figure))
     return by_page
+
+
+def _is_real_figure(rect, page_w: float, page_h: float) -> bool:
+    """Heuristic: keep diagram-sized images, drop headers/banners/full-page scans."""
+    w, h = float(rect.width), float(rect.height)
+    if w < 28 or h < 28:
+        return False  # icon / bullet
+    rel_w = w / page_w
+    rel_h = h / page_h
+    top_frac = float(rect.y0) / page_h
+    aspect = w / max(h, 1.0)
+    if rel_w >= 0.92 and rel_h >= 0.85:
+        return False  # whole-page scan
+    if rel_w >= 0.85 and top_frac < 0.18:
+        return False  # full-width header banner near the top
+    if aspect >= 4.0 or aspect <= 0.18:
+        return False  # thin rule / sidebar
+    return True
 
 
 def assign_figures(problems: List[Problem], pdf_path: Path, work_dir: Path) -> int:

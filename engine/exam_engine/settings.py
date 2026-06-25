@@ -45,6 +45,8 @@ DEFAULTS: Dict[str, Any] = {
     "generateSolutions": True,
     # Add an exam-style header (centered title + 이름/학년/날짜 fill-in row).
     "examHeader": True,
+    # Render math as real 한글 수식 objects (cleaner than plain text).
+    "useEquations": True,
 }
 
 
@@ -58,6 +60,7 @@ class Settings:
     columns: int = 1
     generate_solutions: bool = True
     exam_header: bool = True
+    use_equations: bool = True
 
     # ----- (de)serialization in the JSON shape the web app uses -----
     @classmethod
@@ -72,6 +75,7 @@ class Settings:
             columns=int(merged.get("columns", 1) or 1),
             generate_solutions=bool(merged.get("generateSolutions", True)),
             exam_header=bool(merged.get("examHeader", True)),
+            use_equations=bool(merged.get("useEquations", True)),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -84,6 +88,7 @@ class Settings:
             "columns": self.columns,
             "generateSolutions": self.generate_solutions,
             "examHeader": self.exam_header,
+            "useEquations": self.use_equations,
         }
 
     def api_key(self) -> str:

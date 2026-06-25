@@ -31,13 +31,54 @@ from __future__ import annotations
 import base64
 import html
 import mimetypes
+import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from xml.sax.saxutils import escape as xml_escape
 
 from .models import Document, Figure
+
+# Equations the AI marks like [[eq]]{1} over {2}[[/eq]] become real 한글 수식 objects.
+_EQ_RE = re.compile(r"\[\[eq\]\](.*?)\[\[/eq\]\]", re.DOTALL)
+
+
+def _strip_markers(s: str) -> str:
+    return (s or "").replace("[[eq]]", "").replace("[[/eq]]", "")
+
+
+def _split_eq(line: str) -> List[Tuple[str, str]]:
+    """Split a line into ('text', s) / ('eq', script) segments."""
+    out: List[Tuple[str, str]] = []
+    pos = 0
+    for m in _EQ_RE.finditer(line):
+        if line[pos:m.start()]:
+            out.append(("text", line[pos:m.start()]))
+        out.append(("eq", m.group(1)))
+        pos = m.end()
+    if line[pos:]:
+        out.append(("text", line[pos:]))
+    return out
+
+
+def _add_rich_line(builder, line: str) -> None:
+    """Add a line, rendering [[eq]] segments as 한글 수식 objects (block-level)."""
+    if "[[eq]]" not in line:
+        if line.strip() or line == "":
+            builder.add_paragraph(line)
+        return
+    for kind, seg in _split_eq(line):
+        seg = seg.strip()
+        if not seg:
+            continue
+        if kind == "eq":
+            try:
+                builder.add_equation(seg)
+            except Exception:
+                builder.add_paragraph(seg)  # bad script must not break the doc
+        else:
+            builder.add_paragraph(seg)
 
 MIMETYPE = "application/hwp+zip"
 
@@ -155,10 +196,10 @@ def _build_with_pyhwpxlib(document: Document, out_path: Path, assets_dir: Option
         builder.add_heading(document.title or "Exam", level=1)
 
     for problem in document.problems:
-        builder.add_paragraph(f"{problem.number}. {problem.text}".strip())
+        _add_rich_line(builder, f"{problem.number}. {problem.text}".strip())
         for i, choice in enumerate(problem.choices):
             mark = "①②③④⑤⑥⑦⑧⑨⑩"[i] if i < 10 else f"({i + 1})"
-            builder.add_paragraph(f"   {mark} {choice}")
+            _add_rich_line(builder, f"   {mark} {choice}")
         if assets_dir is not None:
             for fig in problem.figures:
                 src = Path(assets_dir) / fig.path
@@ -171,7 +212,7 @@ def _build_with_pyhwpxlib(document: Document, out_path: Path, assets_dir: Option
             builder.add_paragraph("[풀이]", bold=True)
             for line in problem.solution.splitlines() or [""]:
                 if line.strip():
-                    builder.add_paragraph(line)
+                    _add_rich_line(builder, line)
         builder.add_paragraph("")  # spacer between problems
 
     builder.save(str(out_path))
@@ -266,7 +307,7 @@ def _section_xml(paragraphs: List[str]) -> str:
     for idx, text in enumerate(paragraphs):
         # The first paragraph of a section carries the page setup (secPr).
         secpr = _sec_pr() if idx == 0 else ""
-        run_inner = secpr + (f"<hp:t>{xml_escape(text)}</hp:t>" if text else "<hp:t></hp:t>")
+        run_inner = secpr + (f"<hp:t>{xml_escape(_strip_markers(text))}</hp:t>" if text else "<hp:t></hp:t>")
         body.append(
             f'<hp:p paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
             f'<hp:run charPrIDRef="0">{run_inner}</hp:run></hp:p>'
@@ -522,12 +563,13 @@ def _preview_text(document: Document) -> str:
             lines.append("[풀이]")
             lines.append(p.solution)
         lines.append("")
-    return "\n".join(lines)
+    return _strip_markers("\n".join(lines))
 
 
 def _preview_html(document: Document, assets_dir: Optional[Path], columns: int = 1,
                   header: bool = True) -> str:
     def esc(s: str) -> str:
+        s = (s or "").replace("[[eq]]", "").replace("[[/eq]]", "")
         return html.escape(s).replace("\n", "<br/>")
 
     def img_tag(figure: Figure) -> str:

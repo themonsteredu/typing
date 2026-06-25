@@ -14,6 +14,7 @@ export async function GET() {
     columns: s.columns,
     generateSolutions: s.generateSolutions,
     examHeader: s.examHeader,
+    useEquations: s.useEquations,
     hasKey: Boolean(s.anthropicApiKey),
     keyHint: maskKey(s.anthropicApiKey),
   });
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
   if (typeof body.columns === "number") patch.columns = body.columns;
   if (typeof body.generateSolutions === "boolean") patch.generateSolutions = body.generateSolutions;
   if (typeof body.examHeader === "boolean") patch.examHeader = body.examHeader;
+  if (typeof body.useEquations === "boolean") patch.useEquations = body.useEquations;
   // Empty string with the explicit clear flag removes the stored key.
   if ((body as { clearKey?: boolean }).clearKey === true) {
     patch.anthropicApiKey = "";

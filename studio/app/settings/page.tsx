@@ -24,6 +24,7 @@ export default function SettingsPage() {
   const [columns, setColumns] = useState(1);
   const [generateSolutions, setGenerateSolutions] = useState(true);
   const [examHeader, setExamHeader] = useState(true);
+  const [useEquations, setUseEquations] = useState(true);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -37,6 +38,7 @@ export default function SettingsPage() {
         setColumns(s.columns ?? 1);
         setGenerateSolutions(s.generateSolutions !== false);
         setExamHeader(s.examHeader !== false);
+        setUseEquations(s.useEquations !== false);
         setHasKey(Boolean(s.hasKey));
         setKeyHint(s.keyHint ?? "");
         setLoaded(true);
@@ -46,7 +48,8 @@ export default function SettingsPage() {
 
   async function save(extra: Record<string, unknown> = {}) {
     const body: Record<string, unknown> = {
-      provider, models, dpi, useVision, columns, generateSolutions, examHeader, ...extra,
+      provider, models, dpi, useVision, columns, generateSolutions, examHeader, useEquations,
+      ...extra,
     };
     if (!extra.clearKey && apiKey.trim()) body.anthropicApiKey = apiKey.trim();
     const res = await fetch("/api/settings", {
@@ -120,6 +123,21 @@ export default function SettingsPage() {
           <div className="hint">
             페이지를 이미지로 만들어 Claude가 수식까지 읽습니다. 끄면 빠르지만 수식이 깨질 수 있어요.
             (페이지당 약 수십~수백원의 토큰 비용 발생 — <a href="/usage">지출</a>에서 확인)
+          </div>
+        </div>
+
+        <div className="field">
+          <label>
+            <input
+              type="checkbox"
+              checked={useEquations}
+              onChange={(e) => setUseEquations(e.target.checked)}
+              style={{ width: "auto", marginRight: "0.5rem" }}
+            />
+            수식을 한글 수식 개체로 (분수·지수·루트 깔끔하게)
+          </label>
+          <div className="hint">
+            켜면 AI가 한글 수식 스크립트로 작성해 제대로 된 수식으로 들어갑니다. 끄면 평문(x^2, a/b).
           </div>
         </div>
       </div>

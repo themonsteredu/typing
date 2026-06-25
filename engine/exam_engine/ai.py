@@ -17,6 +17,15 @@ from .models import Problem
 from .settings import Settings, load as load_settings
 
 
+_EQ_INSTRUCTION = (
+    " 수식(분수·지수·루트·적분 등 모양이 중요한 식)은 한글 수식 스크립트로 "
+    "[[eq]]와 [[/eq]] 사이에 작성하세요. 표기 규칙: 분수는 {분자} over {분모}, "
+    "지수는 x^2, 아래첨자는 x_1, 루트는 sqrt{x}, 곱은 times, 부등호는 <= >=, "
+    "적분은 int, 시그마는 sum 입니다. 예: [[eq]]{1} over {2} x^2 - sqrt{3} <= 0[[/eq]]. "
+    "간단한 정수 계산이나 한 줄 답은 평문으로 두어도 됩니다."
+)
+
+
 def sanitize_text(text: str) -> str:
     """Strip markdown/LaTeX so it reads as plain text in HWPX/한글.
 
@@ -129,8 +138,10 @@ class AIClient:
         system = (
             "당신은 한국 수학 시험지를 정확히 디지털화하는 OCR 전문가입니다. "
             "이미지의 모든 문제를 읽어 번호, 문제 본문, 보기(객관식)로 구조화하세요. "
-            "수식은 사람이 읽을 수 있는 텍스트로 옮기되 의미를 보존하세요(예: x^2, √, ∫, 분수는 a/b). "
             "보기가 없으면 빈 배열로 두세요."
+        )
+        system += _EQ_INSTRUCTION if self.settings.use_equations else (
+            " 수식은 사람이 읽을 수 있는 평문(x^2, √, 분수는 a/b)으로 옮기되 의미를 보존하세요."
         )
         message = client.messages.create(
             model=self.settings.model_for("extract"),
@@ -168,8 +179,10 @@ class AIClient:
         system = (
             "당신은 한국 고등학교 수학 시험 문제의 풀이를 작성하는 전문가입니다. "
             "단계별로 명확하고 간결하게 풀이를 작성하고, 마지막 줄에 '정답: '으로 정답을 표시하세요. "
-            "중요: 마크다운(#, **, 목록 기호)이나 LaTeX($, $$, \\frac 등)을 절대 쓰지 마세요. "
-            "한글 문서에 그대로 들어갈 평문으로 쓰고, 수식은 x^2, a/b, √, ≤, × 같은 평문 기호로 표기하세요."
+            "중요: 마크다운(#, **, 목록 기호)이나 LaTeX($, $$, \\frac 등)을 절대 쓰지 마세요."
+        )
+        system += _EQ_INSTRUCTION if self.settings.use_equations else (
+            " 수식은 x^2, a/b, √, ≤, × 같은 평문 기호로 표기하세요."
         )
         prompt = _problem_prompt(problem)
         try:

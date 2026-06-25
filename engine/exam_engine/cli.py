@@ -119,6 +119,8 @@ def cmd_settings(args: argparse.Namespace) -> int:
         cfg.generate_solutions = args.solutions == "on"
     if args.header is not None:
         cfg.exam_header = args.header == "on"
+    if args.equations is not None:
+        cfg.use_equations = args.equations == "on"
     if args.clear_key:
         cfg.anthropic_api_key = ""
     path = settings_mod.save(cfg)
@@ -189,6 +191,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_set.add_argument("--columns", type=int, choices=[1, 2])
     p_set.add_argument("--solutions", choices=["on", "off"])
     p_set.add_argument("--header", choices=["on", "off"], help="exam-style title/name header")
+    p_set.add_argument("--equations", choices=["on", "off"], help="render math as 한글 수식 objects")
     p_set.add_argument("--clear-key", action="store_true", help="remove the stored API key")
     p_set.set_defaults(func=cmd_settings)
 
